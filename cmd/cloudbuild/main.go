@@ -2,16 +2,22 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"log"
 	"net/url"
 	"os"
 	"path/filepath"
 
 	"cloud.google.com/go/storage"
+	"gopkg.in/yaml.v3"
+
 	"golang.org/x/oauth2/google"
 	"golang.org/x/xerrors"
+
+	cloudbuild "google.golang.org/api/cloudbuild/v1"
 
 	"github.com/docker/docker/builder/dockerignore"
 	"github.com/docker/docker/pkg/archive"
@@ -26,41 +32,43 @@ func main() {
 		return
 	}
 
-	tar, err := createSourceArchive()
-	if err != nil {
-		log.Printf("Failed to create source: %+v", err)
-		os.Exit(1)
-		return
-	}
-	defer tar.Close()
-
 	gsFile := fmt.Sprintf(
 		"gs://%v_cloudbuild/source/%v.tgz",
 		projectId,
 		xid.New().String(),
 	)
 
-	if err := uploadCloudStorage(gsFile, tar); err != nil {
-		log.Printf("Failed to upload source: %+v", err)
+	build, err := readCloudBuild()
+	if err != nil {
+		log.Printf("Failed to read cloudbuild.yaml: %+v", err)
 		os.Exit(1)
 		return
 	}
 
-	log.Printf("Uploaded as %v", gsFile)
-	/*
-		fd, err := os.OpenFile("source.tar.gz", os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0755)
+	if err := func() error {
+		tar, err := createSourceArchive()
 		if err != nil {
-			log.Printf("Failed to create source.tar.gz: %+v", err)
+			log.Printf("Failed to create source: %+v", err)
 			os.Exit(1)
-			return
+			return err
 		}
-		defer fd.Close()
-		if _, err := io.Copy(fd, tar); err != nil {
-			log.Printf("Failed to create source.tar.gz: %+v", err)
-			os.Exit(1)
-			return
+		defer tar.Close()
+
+		if err := uploadCloudStorage(gsFile, tar); err != nil {
+			log.Printf("Failed to upload source: %+v", err)
+			return err
 		}
-	*/
+		return nil
+	}(); err != nil {
+		os.Exit(1)
+		return
+	}
+
+	if err := runCloudBuild(projectId, build, gsFile); err != nil {
+		log.Printf("Failed to run cloud build: %+v", err)
+		os.Exit(1)
+		return
+	}
 	os.Exit(0)
 	return
 }
@@ -133,4 +141,67 @@ func uploadCloudStorage(gsFile string, stream io.Reader) error {
 		return xerrors.Errorf("Failed to upload source archive: %w", err)
 	}
 	return nil
+}
+
+func runCloudBuild(projectId string, build *cloudbuild.Build, source string) error {
+	gsUrl, err := url.Parse(source)
+	if err != nil {
+		return xerrors.Errorf("Invalid url '%s': %w", source, err)
+	}
+	bucketName := gsUrl.Host
+	objectPath := gsUrl.Path[1:]
+
+	build.Source = &cloudbuild.Source{
+		StorageSource: &cloudbuild.StorageSource{
+			Bucket: bucketName,
+			Object: objectPath,
+		},
+	}
+
+	ctx := context.Background()
+	service, err := cloudbuild.NewService(ctx)
+	if err != nil {
+		return xerrors.Errorf("Failed to create cloudbuild service: %w", err)
+	}
+	buildService := cloudbuild.NewProjectsBuildsService(service)
+	call := buildService.Create(projectId, build)
+	operation, err := call.Do()
+	if err != nil {
+		return xerrors.Errorf("Failed to start build: %w", err)
+	}
+
+	log.Printf("Started as: %v", operation.Name)
+	return nil
+}
+
+func readCloudBuild() (*cloudbuild.Build, error) {
+	yamlBody, err := func() ([]byte, error) {
+		fd, err := os.Open("cloudbuild.yaml")
+		if err != nil {
+			return nil, err
+		}
+		defer fd.Close()
+
+		yamlBody, err := ioutil.ReadAll(fd)
+		if err != nil {
+			return nil, err
+		}
+		return yamlBody, nil
+	}()
+	if err != nil {
+		return nil, xerrors.Errorf("Failed to read cloudbuild.yaml: %w", err)
+	}
+	m := make(map[string]interface{})
+	if err := yaml.Unmarshal(yamlBody, &m); err != nil {
+		return nil, xerrors.Errorf("Failed to read cloudbuild.yaml: %w", err)
+	}
+	jsonData, err := json.MarshalIndent(&m, "", "  ")
+	if err != nil {
+		return nil, xerrors.Errorf("Failed to serialize cloudbuild.yaml: %w", err)
+	}
+	build := &cloudbuild.Build{}
+	if err := json.Unmarshal(jsonData, build); err != nil {
+		return nil, xerrors.Errorf("Failed to serialize cloudbuild.yaml: %w", err)
+	}
+	return build, nil
 }
