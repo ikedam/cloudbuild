@@ -1,4 +1,4 @@
-package main
+package internal
 
 import (
 	"context"
@@ -7,7 +7,6 @@ import (
 	"io"
 	"io/ioutil"
 	"log"
-	"net/url"
 	"os"
 	"path/filepath"
 	"time"
@@ -16,7 +15,6 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"golang.org/x/oauth2/google"
 	"golang.org/x/xerrors"
 
 	cloudbuild "google.golang.org/api/cloudbuild/v1"
@@ -27,99 +25,129 @@ import (
 	"github.com/rs/xid"
 )
 
-func main() {
-	projectID, err := getProjectID()
-	if err != nil {
-		log.Printf("Failed to upload source: %+v", err)
-		os.Exit(1)
-		return
-	}
+// CloudBuildSubmit holds running state of build submission
+type CloudBuildSubmit struct {
+	Config
+	sourcePath *GcsPath
+}
 
-	gsFile := fmt.Sprintf(
-		"gs://%v_cloudbuild/source/%v.tgz",
-		projectID,
+// Execute performs the sequence to submit a build to CloudBuild
+func (s *CloudBuildSubmit) Execute() error {
+	sourcePath := fmt.Sprintf(
+		"%v/%v.tgz",
+		s.Config.GcsSourceStagingDir,
 		xid.New().String(),
 	)
 
-	build, err := readCloudBuild()
+	var err error
+	if s.sourcePath, err = ParseGcsURL(sourcePath); err != nil {
+		return NewConfigError(
+			fmt.Sprintf("Invalid gcs URL '%v'", s.Config.GcsSourceStagingDir),
+			err,
+		)
+	}
+
+	build, err := s.readCloudBuild()
 	if err != nil {
-		log.Printf("Failed to read cloudbuild.yaml: %+v", err)
-		os.Exit(1)
-		return
+		return NewConfigError(
+			fmt.Sprintf("Failed to read %v", s.Config.Config),
+			err,
+		)
 	}
 
 	if err := func() error {
-		tar, err := createSourceArchive()
+		tar, err := s.createSourceArchive()
 		if err != nil {
-			log.Printf("Failed to create source: %+v", err)
-			os.Exit(1)
-			return err
+			return NewConfigError(
+				fmt.Sprintf("Failed to create source arvhive %v", s.Config.SourceDir),
+				err,
+			)
 		}
 		defer tar.Close()
 
-		if err := uploadCloudStorage(gsFile, tar); err != nil {
-			log.Printf("Failed to upload source: %+v", err)
-			return err
+		if err := s.uploadCloudStorage(tar); err != nil {
+			return NewServiceError(
+				fmt.Sprintf("Failed to upload source arvhive to %v", s.sourcePath),
+				err,
+			)
 		}
 		return nil
 	}(); err != nil {
-		os.Exit(1)
-		return
+		return err
 	}
 
-	buildID, err := runCloudBuild(projectID, build, gsFile)
+	buildID, err := s.runCloudBuild(build)
 	if err != nil {
-		log.Printf("Failed to run cloud build: %+v", err)
-		os.Exit(1)
-		return
+		return NewServiceError(
+			fmt.Sprintf("Failed to create a new build for source arvhive %v", s.sourcePath),
+			err,
+		)
 	}
 
-	if err := watchCloudBuild(projectID, buildID); err != nil {
-		log.Printf("Failed to watch cloud build %s: %+v", buildID, err)
-		os.Exit(1)
-		return
+	status, err := s.watchCloudBuild(buildID)
+	if err != nil {
+		return err
 	}
-	os.Exit(0)
-	return
+	if status != "SUCCESS" {
+		return NewBuildResultError(buildID, status)
+	}
+
+	return nil
 }
 
-func getProjectID() (string, error) {
-	if projectID := os.Getenv("GOOGLE_PROJECT_ID"); projectID != "" {
-		return projectID, nil
-	}
-	ctx := context.Background()
-	cred, err := google.FindDefaultCredentials(ctx)
-	if err != nil {
-		return "", xerrors.Errorf("Failed to get default credentials: %w", err)
-	}
-	if cred.ProjectID == "" {
-		return "", xerrors.New("No projectId is configured. Please set GOOGLE_PROJECT_ID.")
-	}
+func (s *CloudBuildSubmit) readCloudBuild() (*cloudbuild.Build, error) {
+	yamlBody, err := func() ([]byte, error) {
+		fd, err := os.Open(s.Config.Config)
+		if err != nil {
+			return nil, err
+		}
+		defer fd.Close()
 
-	return cred.ProjectID, nil
+		yamlBody, err := ioutil.ReadAll(fd)
+		if err != nil {
+			return nil, err
+		}
+		return yamlBody, nil
+	}()
+	if err != nil {
+		return nil, xerrors.Errorf("Failed to read %v: %w", s.Config.Config, err)
+	}
+	m := make(map[string]interface{})
+	if err := yaml.Unmarshal(yamlBody, &m); err != nil {
+		return nil, xerrors.Errorf("Failed to read %v: %w", s.Config.Config, err)
+	}
+	jsonData, err := json.MarshalIndent(&m, "", "  ")
+	if err != nil {
+		return nil, xerrors.Errorf("Failed to serialize %v: %w", s.Config.Config, err)
+	}
+	build := &cloudbuild.Build{}
+	if err := json.Unmarshal(jsonData, build); err != nil {
+		return nil, xerrors.Errorf("Failed to serialize %v: %w", s.Config.Config, err)
+	}
+	return build, nil
 }
 
-func createSourceArchive() (io.ReadCloser, error) {
+func (s *CloudBuildSubmit) createSourceArchive() (io.ReadCloser, error) {
 	excludes := []string{}
-	_, err := os.Stat(".gcloudignore")
+	_, err := os.Stat(s.Config.IgnoreFile)
 	if err == nil {
 		func() {
-			fd, err := os.Open(".gcloudignore")
+			fd, err := os.Open(s.Config.IgnoreFile)
 			if err != nil {
-				log.Printf("Warn: ignored .gcloudignore: %+v", err)
+				log.Printf("Warning: ignored %v: %+v", s.Config.IgnoreFile, err)
 				return
 			}
 			defer fd.Close()
 			if readExcludes, err := dockerignore.ReadAll(fd); err == nil {
 				excludes = readExcludes
 			} else {
-				log.Printf("Warn: ignored .gcloudignore: %+v", err)
+				log.Printf("Warning: ignored %v: %+v", s.Config.IgnoreFile, err)
 			}
 		}()
 	}
-	path, err := filepath.Abs(".")
+	path, err := filepath.Abs(s.Config.SourceDir)
 	if err != nil {
-		return nil, xerrors.Errorf("Failed to stat .: %w", err)
+		return nil, xerrors.Errorf("Failed to stat %v: %w", s.Config.SourceDir, err)
 	}
 	tar, err := archive.TarWithOptions(path, &archive.TarOptions{
 		Compression:     archive.Gzip,
@@ -131,13 +159,9 @@ func createSourceArchive() (io.ReadCloser, error) {
 	return tar, nil
 }
 
-func uploadCloudStorage(gsFile string, stream io.Reader) error {
-	gsURL, err := url.Parse(gsFile)
-	if err != nil {
-		return xerrors.Errorf("Invalid url '%s': %w", gsFile, err)
-	}
-	bucketName := gsURL.Host
-	objectPath := gsURL.Path[1:]
+func (s *CloudBuildSubmit) uploadCloudStorage(stream io.Reader) error {
+	bucketName := s.sourcePath.Bucket
+	objectPath := s.sourcePath.Object
 
 	ctx := context.Background()
 	client, err := storage.NewClient(ctx)
@@ -148,18 +172,14 @@ func uploadCloudStorage(gsFile string, stream io.Reader) error {
 	writer := object.NewWriter(ctx)
 	defer writer.Close()
 	if _, err := io.Copy(writer, stream); err != nil {
-		return xerrors.Errorf("Failed to upload source archive: %w", err)
+		return xerrors.Errorf("Failed to upload source archive to %v: %w", s.sourcePath, err)
 	}
 	return nil
 }
 
-func runCloudBuild(projectID string, build *cloudbuild.Build, source string) (string, error) {
-	gsURL, err := url.Parse(source)
-	if err != nil {
-		return "", xerrors.Errorf("Invalid url '%s': %w", source, err)
-	}
-	bucketName := gsURL.Host
-	objectPath := gsURL.Path[1:]
+func (s *CloudBuildSubmit) runCloudBuild(build *cloudbuild.Build) (string, error) {
+	bucketName := s.sourcePath.Bucket
+	objectPath := s.sourcePath.Object
 
 	build.Source = &cloudbuild.Source{
 		StorageSource: &cloudbuild.StorageSource{
@@ -174,7 +194,7 @@ func runCloudBuild(projectID string, build *cloudbuild.Build, source string) (st
 		return "", xerrors.Errorf("Failed to create cloudbuild service: %w", err)
 	}
 	buildService := cloudbuild.NewProjectsBuildsService(service)
-	call := buildService.Create(projectID, build)
+	call := buildService.Create(s.Config.Project, build)
 	operation, err := call.Do()
 	if err != nil {
 		return "", xerrors.Errorf("Failed to start build: %w", err)
@@ -187,63 +207,34 @@ func runCloudBuild(projectID string, build *cloudbuild.Build, source string) (st
 	return metadata.Build.Id, nil
 }
 
-func readCloudBuild() (*cloudbuild.Build, error) {
-	yamlBody, err := func() ([]byte, error) {
-		fd, err := os.Open("cloudbuild.yaml")
-		if err != nil {
-			return nil, err
-		}
-		defer fd.Close()
-
-		yamlBody, err := ioutil.ReadAll(fd)
-		if err != nil {
-			return nil, err
-		}
-		return yamlBody, nil
-	}()
-	if err != nil {
-		return nil, xerrors.Errorf("Failed to read cloudbuild.yaml: %w", err)
-	}
-	m := make(map[string]interface{})
-	if err := yaml.Unmarshal(yamlBody, &m); err != nil {
-		return nil, xerrors.Errorf("Failed to read cloudbuild.yaml: %w", err)
-	}
-	jsonData, err := json.MarshalIndent(&m, "", "  ")
-	if err != nil {
-		return nil, xerrors.Errorf("Failed to serialize cloudbuild.yaml: %w", err)
-	}
-	build := &cloudbuild.Build{}
-	if err := json.Unmarshal(jsonData, build); err != nil {
-		return nil, xerrors.Errorf("Failed to serialize cloudbuild.yaml: %w", err)
-	}
-	return build, nil
-}
-
-func watchCloudBuild(projectID, buildID string) error {
+func (s *CloudBuildSubmit) watchCloudBuild(buildID string) (string, error) {
 	ctx := context.Background()
 	service, err := cloudbuild.NewService(ctx)
 	if err != nil {
-		xerrors.Errorf("Failed to create cloudbuild service: %w", err)
+		return "", NewServiceError("Failed to create cloudbuild service", err)
 	}
 	buildService := cloudbuild.NewProjectsBuildsService(service)
 
-	call := buildService.Get(projectID, buildID)
+	call := buildService.Get(s.Config.Project, buildID)
 	build, err := call.Do()
 	if err != nil {
-		return xerrors.Errorf("Failed to stat build %s: %w", buildID, err)
+		return "", NewServiceError(
+			fmt.Sprintf("Failed to stat build %s", buildID),
+			err,
+		)
 	}
 
 	logURLStr := fmt.Sprintf("%v/log-%v.txt", build.LogsBucket, build.Id)
-	logURL, err := url.Parse(logURLStr)
+	logURL, err := ParseGcsURL(logURLStr)
 	if err != nil {
-		return xerrors.Errorf("Invalid url '%s': %w", build.LogUrl, err)
+		return "", xerrors.Errorf("Invalid url '%s': %w", build.LogUrl, err)
 	}
-	bucketName := logURL.Host
-	objectPath := logURL.Path[1:]
+	bucketName := logURL.Bucket
+	objectPath := logURL.Object
 
 	gcsClient, err := storage.NewClient(ctx)
 	if err != nil {
-		return xerrors.Errorf("Failed to initialize gcs client: %w", err)
+		return "", NewServiceError("Failed to initialize gcs client", err)
 	}
 	logObject := gcsClient.Bucket(bucketName).Object(objectPath)
 
@@ -255,7 +246,14 @@ func watchCloudBuild(projectID, buildID string) error {
 	for !complete {
 		if build, err = call.Do(); err != nil {
 			cbErrCount++
-			log.Printf("Failed to stat build (%v): %v", buildID, err)
+			if s.Config.MaxGetBuildErrorCount > 0 &&
+				cbErrCount >= s.Config.MaxGetBuildErrorCount {
+				return "", NewServiceError(
+					fmt.Sprintf("Failed to stat build %v", buildID),
+					err,
+				)
+			}
+			log.Printf("Failed to stat build %v: %+v", buildID, err)
 		} else {
 			cbErrCount = 0
 			if isBuildCompleted(build.Status) {
@@ -265,30 +263,48 @@ func watchCloudBuild(projectID, buildID string) error {
 		if reader, err := logObject.NewRangeReader(ctx, offset, -1); err != nil {
 			if !isIgnorableGcsError(err) {
 				gcsErrCount++
+				if s.Config.MaxReadLogErrorCount > 0 &&
+					gcsErrCount >= s.Config.MaxReadLogErrorCount {
+					return "", NewServiceError(
+						"Failed to read log",
+						err,
+					)
+				}
 				log.Printf("Failed to read log (%v): %+v", gcsErrCount, err)
 			} else {
 				gcsErrCount = 0
 			}
 		} else {
-			func() {
+			if err := func() error {
 				defer reader.Close()
 				if count, err := io.Copy(os.Stdout, reader); err != nil {
 					if !isIgnorableGcsError(err) {
 						gcsErrCount++
+						if s.Config.MaxReadLogErrorCount > 0 &&
+							gcsErrCount >= s.Config.MaxReadLogErrorCount {
+							return NewServiceError(
+								"Failed to read log",
+								err,
+							)
+						}
 						log.Printf("Failed to read log (%v): %+v", gcsErrCount, err)
+						offset += count
 					} else {
 						gcsErrCount = 0
+						offset += count
 					}
 				} else {
 					gcsErrCount = 0
 					offset += count
 				}
-			}()
+				return nil
+			}(); err != nil {
+				return "", err
+			}
 		}
-		time.Sleep(500 * time.Millisecond)
+		time.Sleep(time.Duration(s.Config.PollingIntervalMsec) * time.Millisecond)
 	}
-	log.Printf("Build is complete with %v", build.Status)
-	return nil
+	return build.Status, nil
 }
 
 func isBuildCompleted(status string) bool {

@@ -14,9 +14,12 @@ require (
 	github.com/Microsoft/hcsshim v0.8.7 // indirect
 	github.com/docker/docker v0.0.0-00010101000000-000000000000
 	github.com/googleapis/gax-go v2.0.2+incompatible // indirect
+	github.com/mitchellh/go-homedir v1.1.0
 	github.com/opencontainers/image-spec v1.0.1 // indirect
 	github.com/rs/xid v1.2.1
 	github.com/sirupsen/logrus v1.4.2 // indirect
+	github.com/spf13/cobra v0.0.5
+	github.com/spf13/viper v1.6.1
 	golang.org/x/oauth2 v0.0.0-20190604053449-0f29369cfe45
 	golang.org/x/sys v0.0.0-20191228213918-04cbcbbfeed8 // indirect
 	golang.org/x/xerrors v0.0.0-20191204190536-9bdfabe68543
