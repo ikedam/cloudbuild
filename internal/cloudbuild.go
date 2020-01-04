@@ -128,26 +128,26 @@ func (s *CloudBuildSubmit) readCloudBuild() (*cloudbuild.Build, error) {
 }
 
 func (s *CloudBuildSubmit) createSourceArchive() (io.ReadCloser, error) {
+	path, err := filepath.Abs(s.Config.SourceDir)
+	if err != nil {
+		return nil, xerrors.Errorf("Failed to stat %v: %w", s.Config.SourceDir, err)
+	}
+	ignoreFile := filepath.Join(path, s.Config.IgnoreFile)
 	excludes := []string{}
-	_, err := os.Stat(s.Config.IgnoreFile)
-	if err == nil {
+	if _, err := os.Stat(ignoreFile); err == nil {
 		func() {
-			fd, err := os.Open(s.Config.IgnoreFile)
+			fd, err := os.Open(ignoreFile)
 			if err != nil {
-				log.Printf("Warning: ignored %v: %+v", s.Config.IgnoreFile, err)
+				log.Printf("Warning: ignored %v: %+v", ignoreFile, err)
 				return
 			}
 			defer fd.Close()
 			if readExcludes, err := dockerignore.ReadAll(fd); err == nil {
 				excludes = readExcludes
 			} else {
-				log.Printf("Warning: ignored %v: %+v", s.Config.IgnoreFile, err)
+				log.Printf("Warning: ignored %v: %+v", ignoreFile, err)
 			}
 		}()
-	}
-	path, err := filepath.Abs(s.Config.SourceDir)
-	if err != nil {
-		return nil, xerrors.Errorf("Failed to stat %v: %w", s.Config.SourceDir, err)
 	}
 	tar, err := archive.TarWithOptions(path, &archive.TarOptions{
 		Compression:     archive.Gzip,

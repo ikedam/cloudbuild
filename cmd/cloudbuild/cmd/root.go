@@ -57,9 +57,9 @@ func init() {
 	rootCmd.Flags().String("project", "", "ID of Google Cloud Project.")
 	viper.BindPFlag("project", rootCmd.Flags().Lookup("project"))
 	rootCmd.Flags().String("gcs-source-staging-dir", "", "GCS directory to store source archives.")
-	viper.BindPFlag("gcs-source-staging-dir", rootCmd.Flags().Lookup("gcs-source-staging-dir"))
-	rootCmd.Flags().String("ignore-file", ".gcloudignore", "File to use instead of .gcloudignore.")
-	viper.BindPFlag("ignore-file", rootCmd.Flags().Lookup("ignore-file"))
+	viper.BindPFlag("gcsSourceStagingDir", rootCmd.Flags().Lookup("gcs-source-staging-dir"))
+	rootCmd.Flags().String("ignore-file", ".gcloudignore", "File to use instead of .gcloudignore. Can be relative to the source directory.")
+	viper.BindPFlag("ignoreFile", rootCmd.Flags().Lookup("ignore-file"))
 	rootCmd.Flags().StringP("config", "c", "cloudbuild.yaml", "File to use instead of cloudbuild.yaml")
 	viper.BindPFlag("config", rootCmd.Flags().Lookup("config"))
 }
