@@ -1,14 +1,12 @@
 package cmd
 
 import (
-	"fmt"
-	"log"
-	"os"
-
 	"github.com/ikedam/cloudbuild/internal"
+	"github.com/ikedam/cloudbuild/log"
 	homedir "github.com/mitchellh/go-homedir"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
+	"golang.org/x/xerrors"
 )
 
 var cfgFile string
@@ -22,6 +20,7 @@ var rootCmd = &cobra.Command{
 TODO`,
 	Args: cobra.ExactValidArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		initLevel()
 		submit := &internal.CloudBuildSubmit{}
 
 		if err := viper.Unmarshal(&submit.Config); err != nil {
@@ -31,6 +30,7 @@ TODO`,
 			return err
 		}
 		submit.Config.SourceDir = args[0]
+		log.WithField("configuration", &submit.Config).Trace("Initialized configuration")
 
 		return submit.Execute()
 	},
@@ -40,12 +40,18 @@ TODO`,
 // This is called by main.main(). It only needs to happen once to the rootCmd.
 func Execute() {
 	if err := rootCmd.Execute(); err != nil {
-		log.Printf("%+v", err)
-		os.Exit(internal.ExitCodeForError(err))
+		var buildResultError *internal.BuildResultError
+		if xerrors.As(err, &buildResultError) {
+			log.Errorf("Build failed with %+v", buildResultError.Status)
+		} else {
+			log.WithError(err).Error("Failed to run a build")
+		}
+		log.Exit(internal.ExitCodeForError(err))
 	}
 }
 
 func init() {
+	cobra.OnInitialize(initLevel)
 	cobra.OnInitialize(initConfig)
 
 	// Here you will define your flags and configuration settings.
@@ -53,6 +59,8 @@ func init() {
 	// will be global for your application.
 
 	// rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is $HOME/.cloudbuild.yaml)")
+	rootCmd.PersistentFlags().String("log-level", "warn", "Log level.")
+	viper.BindPFlag("logLevel", rootCmd.PersistentFlags().Lookup("log-level"))
 
 	rootCmd.Flags().String("project", "", "ID of Google Cloud Project.")
 	viper.BindPFlag("project", rootCmd.Flags().Lookup("project"))
@@ -64,6 +72,14 @@ func init() {
 	viper.BindPFlag("config", rootCmd.Flags().Lookup("config"))
 }
 
+// initLevel initializes the log level.
+func initLevel() {
+	if err := log.SetLevelByName(viper.GetString("logLevel")); err != nil {
+		log.WithError(err).Error("Invalid log level specified.")
+		log.Exit(internal.ExitCodeConfigurationError)
+	}
+}
+
 // initConfig reads in config file and ENV variables if set.
 func initConfig() {
 	if cfgFile != "" {
@@ -73,8 +89,8 @@ func initConfig() {
 		// Find home directory.
 		home, err := homedir.Dir()
 		if err != nil {
-			fmt.Println(err)
-			os.Exit(1)
+			log.WithError(err).Error("Failed to stat home directory.")
+			log.Exit(internal.ExitCodeConfigurationError)
 		}
 
 		// Search config in home directory with name ".cloudbuild" (without extension).
@@ -86,6 +102,8 @@ func initConfig() {
 
 	// If a config file is found, read it in.
 	if err := viper.ReadInConfig(); err == nil {
-		log.Println("Using config file:", viper.ConfigFileUsed())
+		log.WithField("configfile", viper.ConfigFileUsed).Trace("Using config file")
+	} else {
+		log.WithError(err).WithField("configfile", viper.ConfigFileUsed).Warning("Failed to read config file")
 	}
 }

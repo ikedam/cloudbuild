@@ -6,6 +6,17 @@ import (
 	"golang.org/x/xerrors"
 )
 
+const (
+	// ExitCodeBuildFailure is the exit code for build failures.
+	ExitCodeBuildFailure = 1
+	// ExitCodeUnexpectedError is the exit code for unexpected errors.
+	ExitCodeUnexpectedError = 100
+	// ExitCodeConfigurationError is the exit code for configuration errors.
+	ExitCodeConfigurationError = 101
+	// ExitCodeServiceError is the exit code for service errors such as Google Cloud Platform services.
+	ExitCodeServiceError = 102
+)
+
 type wrapError struct {
 	err     error
 	message string
@@ -70,13 +81,13 @@ func NewBuildResultError(buildID, status string) error {
 // ExitCodeForError returns the exit code appropriate for the passed error.
 func ExitCodeForError(err error) int {
 	if xerrors.Is(err, &BuildResultError{}) {
-		return 1
+		return ExitCodeBuildFailure
 	}
 	if xerrors.Is(err, &ConfigError{}) {
-		return 101
+		return ExitCodeConfigurationError
 	}
 	if xerrors.Is(err, &ServiceError{}) {
-		return 102
+		return ExitCodeServiceError
 	}
-	return 100
+	return ExitCodeUnexpectedError
 }

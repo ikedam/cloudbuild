@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/ikedam/cloudbuild/log"
+
 	"golang.org/x/oauth2/google"
 )
 
@@ -55,11 +57,13 @@ func (c *Config) ResolveDefaults() error {
 
 func (c *Config) resolveProject() error {
 	if c.Project != "" {
+		log.Debug("Using the configured project")
 		return nil
 	}
 
 	if projectID := os.Getenv("GOOGLE_PROJECT_ID"); projectID != "" {
 		c.Project = projectID
+		log.Debug("Using the project configured with GOOGLE_PROJECT_ID")
 		return nil
 	}
 
@@ -73,6 +77,7 @@ func (c *Config) resolveProject() error {
 	}
 
 	c.Project = cred.ProjectID
+	log.Debug("Using the project of the default credentials")
 
 	return nil
 }

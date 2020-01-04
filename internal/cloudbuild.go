@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
-	"log"
 	"os"
 	"path/filepath"
 	"time"
@@ -22,6 +21,7 @@ import (
 
 	"github.com/docker/docker/builder/dockerignore"
 	"github.com/docker/docker/pkg/archive"
+	"github.com/ikedam/cloudbuild/log"
 	"github.com/rs/xid"
 )
 
@@ -96,6 +96,7 @@ func (s *CloudBuildSubmit) Execute() error {
 }
 
 func (s *CloudBuildSubmit) readCloudBuild() (*cloudbuild.Build, error) {
+	log.WithField("file", s.Config.Config).Debug("reading cloudbuild.yaml")
 	yamlBody, err := func() ([]byte, error) {
 		fd, err := os.Open(s.Config.Config)
 		if err != nil {
@@ -120,14 +121,17 @@ func (s *CloudBuildSubmit) readCloudBuild() (*cloudbuild.Build, error) {
 	if err != nil {
 		return nil, xerrors.Errorf("Failed to serialize %v: %w", s.Config.Config, err)
 	}
+	log.WithField("json", jsonData).Trace("Marshal cloudbuild.yaml to json format")
 	build := &cloudbuild.Build{}
 	if err := json.Unmarshal(jsonData, build); err != nil {
 		return nil, xerrors.Errorf("Failed to serialize %v: %w", s.Config.Config, err)
 	}
+	log.WithField("file", s.Config.Config).WithField("build", build).Trace("finished to read cloudbuild.yaml")
 	return build, nil
 }
 
 func (s *CloudBuildSubmit) createSourceArchive() (io.ReadCloser, error) {
+	log.WithField("source", s.Config.SourceDir).Info("Archiving the source directory")
 	path, err := filepath.Abs(s.Config.SourceDir)
 	if err != nil {
 		return nil, xerrors.Errorf("Failed to stat %v: %w", s.Config.SourceDir, err)
@@ -136,17 +140,20 @@ func (s *CloudBuildSubmit) createSourceArchive() (io.ReadCloser, error) {
 	excludes := []string{}
 	if _, err := os.Stat(ignoreFile); err == nil {
 		func() {
+			log.WithField("file", ignoreFile).Debug("reading .gcloudignore")
 			fd, err := os.Open(ignoreFile)
 			if err != nil {
-				log.Printf("Warning: ignored %v: %+v", ignoreFile, err)
+				log.WithError(err).WithField("file", ignoreFile).Warning("Failed to open .glcoudignore")
 				return
 			}
 			defer fd.Close()
 			if readExcludes, err := dockerignore.ReadAll(fd); err == nil {
 				excludes = readExcludes
 			} else {
-				log.Printf("Warning: ignored %v: %+v", ignoreFile, err)
+				log.WithError(err).WithField("file", ignoreFile).Warning("Failed to read .glcoudignore")
+				return
 			}
+			log.WithField("file", ignoreFile).WithField("ignores", excludes).Trace("finished to read .gcloudignore")
 		}()
 	}
 	tar, err := archive.TarWithOptions(path, &archive.TarOptions{
@@ -156,10 +163,12 @@ func (s *CloudBuildSubmit) createSourceArchive() (io.ReadCloser, error) {
 	if err != nil {
 		return nil, xerrors.Errorf("Failed to create source archive: %w", err)
 	}
+	log.WithField("source", s.Config.SourceDir).Info("Finished to archiving the source directory")
 	return tar, nil
 }
 
 func (s *CloudBuildSubmit) uploadCloudStorage(stream io.Reader) error {
+	log.WithField("gcsPath", s.sourcePath).Info("Uploading the source archive")
 	bucketName := s.sourcePath.Bucket
 	objectPath := s.sourcePath.Object
 
@@ -171,13 +180,16 @@ func (s *CloudBuildSubmit) uploadCloudStorage(stream io.Reader) error {
 	object := client.Bucket(bucketName).Object(objectPath)
 	writer := object.NewWriter(ctx)
 	defer writer.Close()
-	if _, err := io.Copy(writer, stream); err != nil {
+	transferred, err := io.Copy(writer, stream)
+	if err != nil {
 		return xerrors.Errorf("Failed to upload source archive to %v: %w", s.sourcePath, err)
 	}
+	log.WithField("gcsPath", s.sourcePath).WithField("size", transferred).Info("Finished to upload the source archive")
 	return nil
 }
 
 func (s *CloudBuildSubmit) runCloudBuild(build *cloudbuild.Build) (string, error) {
+	log.WithField("source", s.sourcePath).Info("Starting build")
 	bucketName := s.sourcePath.Bucket
 	objectPath := s.sourcePath.Object
 
@@ -204,10 +216,13 @@ func (s *CloudBuildSubmit) runCloudBuild(build *cloudbuild.Build) (string, error
 	if err := json.Unmarshal(operation.Metadata, &metadata); err != nil {
 		return "", xerrors.Errorf("Failed to parse result(%s): %w", string(operation.Metadata), err)
 	}
+	log.WithField("build", metadata).Trace("Build metadata")
+	log.WithField("build", metadata.Build.Id).Info("Build started")
 	return metadata.Build.Id, nil
 }
 
 func (s *CloudBuildSubmit) watchCloudBuild(buildID string) (string, error) {
+	log.WithField("source", s.sourcePath).Debug("Watching build")
 	ctx := context.Background()
 	service, err := cloudbuild.NewService(ctx)
 	if err != nil {
@@ -223,6 +238,7 @@ func (s *CloudBuildSubmit) watchCloudBuild(buildID string) (string, error) {
 			err,
 		)
 	}
+	log.WithField("build", build).Trace("Stat build")
 
 	logURLStr := fmt.Sprintf("%v/log-%v.txt", build.LogsBucket, build.Id)
 	logURL, err := ParseGcsURL(logURLStr)
@@ -231,6 +247,7 @@ func (s *CloudBuildSubmit) watchCloudBuild(buildID string) (string, error) {
 	}
 	bucketName := logURL.Bucket
 	objectPath := logURL.Object
+	log.WithField("gcsUrl", logURL).Trace("Stat log")
 
 	gcsClient, err := storage.NewClient(ctx)
 	if err != nil {
@@ -253,10 +270,11 @@ func (s *CloudBuildSubmit) watchCloudBuild(buildID string) (string, error) {
 					err,
 				)
 			}
-			log.Printf("Failed to stat build %v: %+v", buildID, err)
+			log.WithError(err).WithField("buildID", buildID).WithField("errCount", cbErrCount).Warn("Failed to stat build")
 		} else {
 			cbErrCount = 0
 			if isBuildCompleted(build.Status) {
+				log.WithField("build", build).Trace("Build completed")
 				complete = true
 			}
 		}
@@ -270,8 +288,16 @@ func (s *CloudBuildSubmit) watchCloudBuild(buildID string) (string, error) {
 						err,
 					)
 				}
-				log.Printf("Failed to read log (%v): %+v", gcsErrCount, err)
+				log.WithError(err).
+					WithField("gcsUrl", logURL).
+					WithField("errCount", gcsErrCount).
+					WithField("offset", offset).
+					Warn("Failed to stat log stream")
 			} else {
+				log.WithError(err).
+					WithField("gcsUrl", logURL).
+					WithField("offset", offset).
+					Trace("Ignorable error for stating log stream")
 				gcsErrCount = 0
 			}
 		} else {
@@ -287,9 +313,19 @@ func (s *CloudBuildSubmit) watchCloudBuild(buildID string) (string, error) {
 								err,
 							)
 						}
-						log.Printf("Failed to read log (%v): %+v", gcsErrCount, err)
+						log.WithError(err).
+							WithField("gcsUrl", logURL).
+							WithField("errCount", gcsErrCount).
+							WithField("offset", offset).
+							WithField("count", count).
+							Warn("Failed to read log stream")
 						offset += count
 					} else {
+						log.WithError(err).
+							WithField("gcsUrl", logURL).
+							WithField("offset", offset).
+							WithField("count", count).
+							Trace("Ignorable error for reading log stream")
 						gcsErrCount = 0
 						offset += count
 					}
@@ -304,6 +340,13 @@ func (s *CloudBuildSubmit) watchCloudBuild(buildID string) (string, error) {
 		}
 		time.Sleep(time.Duration(s.Config.PollingIntervalMsec) * time.Millisecond)
 	}
+	log.WithField("build", build).
+		WithField("gcsUrl", logURL).
+		WithField("logSize", offset).
+		Debug("Finished to watch build")
+	log.WithField("buildID", build.Id).
+		WithField("status", build.Status).
+		Info("Finished to watch build")
 	return build.Status, nil
 }
 
