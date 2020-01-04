@@ -20,6 +20,15 @@ const (
 type wrapError struct {
 	err     error
 	message string
+	frame   xerrors.Frame
+}
+
+func newWrapError(message string, err error) *wrapError {
+	return &wrapError{
+		err:     err,
+		message: message,
+		frame:   xerrors.Caller(2),
+	}
 }
 
 func (e *wrapError) Unwrap() error {
@@ -30,6 +39,16 @@ func (e *wrapError) Error() string {
 	return e.message
 }
 
+func (e *wrapError) Format(s fmt.State, v rune) {
+	xerrors.FormatError(e, s, v)
+}
+
+func (e *wrapError) FormatError(p xerrors.Printer) error {
+	p.Print(e.Error())
+	e.frame.Format(p)
+	return e.Unwrap()
+}
+
 // ConfigError indicates error caused for configuration issues.
 type ConfigError struct {
 	*wrapError
@@ -38,10 +57,7 @@ type ConfigError struct {
 // NewConfigError creates a new ConfigError
 func NewConfigError(message string, cause error) error {
 	return &ConfigError{
-		wrapError: &wrapError{
-			err:     cause,
-			message: message,
-		},
+		wrapError: newWrapError(message, cause),
 	}
 }
 
@@ -53,10 +69,7 @@ type ServiceError struct {
 // NewServiceError creates a new ConfigError
 func NewServiceError(message string, cause error) error {
 	return &ServiceError{
-		wrapError: &wrapError{
-			err:     cause,
-			message: message,
-		},
+		wrapError: newWrapError(message, cause),
 	}
 }
 

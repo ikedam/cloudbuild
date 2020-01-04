@@ -28,6 +28,9 @@ type Config struct {
 	// Config is the file to use instead of cloudbuild.yaml
 	Config string
 
+	// Substitutions is the key=value expressions to replace keywords in cloudbuild.yaml
+	Substitutions []string
+
 	// PollingIntervalMsec is the interval for polling build statuses and logs.
 	PollingIntervalMsec int
 

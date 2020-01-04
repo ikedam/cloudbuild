@@ -8,6 +8,7 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"cloud.google.com/go/storage"
@@ -127,6 +128,17 @@ func (s *CloudBuildSubmit) readCloudBuild() (*cloudbuild.Build, error) {
 		return nil, xerrors.Errorf("Failed to serialize %v: %w", s.Config.Config, err)
 	}
 	log.WithField("file", s.Config.Config).WithField("build", build).Trace("finished to read cloudbuild.yaml")
+
+	if len(s.Config.Substitutions) > 0 {
+		if build.Substitutions == nil {
+			build.Substitutions = make(map[string]string)
+		}
+		for _, substitution := range s.Config.Substitutions {
+			keyValue := strings.SplitN(substitution, "=", 2)
+			build.Substitutions[keyValue[0]] = keyValue[1]
+		}
+	}
+
 	return build, nil
 }
 

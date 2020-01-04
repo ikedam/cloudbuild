@@ -70,6 +70,8 @@ func init() {
 	viper.BindPFlag("ignoreFile", rootCmd.Flags().Lookup("ignore-file"))
 	rootCmd.Flags().StringP("config", "c", "cloudbuild.yaml", "File to use instead of cloudbuild.yaml")
 	viper.BindPFlag("config", rootCmd.Flags().Lookup("config"))
+	rootCmd.Flags().StringSliceP("substitutions", "s", []string{}, "key=value expression to replace keywords in cloudbuild.yaml. Accepts multiple times.")
+	viper.BindPFlag("substitutions", rootCmd.Flags().Lookup("substitutions"))
 }
 
 // initLevel initializes the log level.
