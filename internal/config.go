@@ -34,17 +34,26 @@ type Config struct {
 	// PollingIntervalMsec is the interval for polling build statuses and logs.
 	PollingIntervalMsec int
 
-	// UploadTry is the number to try uploading. 0 is infinite
-	UploadTry int
-
 	// UploadTimeoutMsec is the milliseconds to consider the upload is timed out.
 	UploadTimeoutMsec int
 
-	// MaxGetBuildErrorCount is the maximum count to give up to get build informations.
-	MaxGetBuildErrorCount int
+	// MaxUploadTryCount is the maximum number to give up uploading source arvhive. 0 is infinite
+	MaxUploadTryCount int
 
-	// MaxReadLogErrorCount is the maximum count to give up to read logs.
-	MaxReadLogErrorCount int
+	// CloudBuildTimeoutMsec is the millieseconds to consider Cloud Build operations are timed out.
+	CloudBuildTimeoutMsec int
+
+	// MaxStartBuildTryCount is the maximum number to give up starting Cloud Build. 0 is infinite
+	MaxStartBuildTryCount int
+
+	// MaxGetBuildTryCount is the maximum number to give up to get build informations. 0 is infinite
+	MaxGetBuildTryCount int
+
+	// ReadLogTimeoutMsec is the milliseconds to consider fetching logs from Cloud Storage is timed out.
+	ReadLogTimeoutMsec int
+
+	// MaxReadLogErrorCount is the maximum number to give up to read logs. 0 is infinite
+	MaxReadLogTryCount int
 }
 
 // ResolveDefaults fills default values for configurations.

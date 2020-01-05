@@ -18,7 +18,6 @@ import (
 	"golang.org/x/xerrors"
 
 	cloudbuild "google.golang.org/api/cloudbuild/v1"
-	"google.golang.org/api/googleapi"
 
 	"github.com/docker/docker/builder/dockerignore"
 	"github.com/docker/docker/pkg/archive"
@@ -56,33 +55,54 @@ func (s *CloudBuildSubmit) Execute() error {
 		)
 	}
 
-	if err := func() error {
-		tar, err := s.createSourceArchive()
-		if err != nil {
-			return NewConfigError(
-				fmt.Sprintf("Failed to create source arvhive %v", s.Config.SourceDir),
-				err,
-			)
-		}
-		defer tar.Close()
+	for backoff := NewBackoff(); true; {
+		if err := func() error {
+			tar, err := s.createSourceArchive()
+			if err != nil {
+				return NewConfigError(
+					fmt.Sprintf("Failed to create source arvhive %v", s.Config.SourceDir),
+					err,
+				)
+			}
+			defer tar.Close()
 
-		if err := s.uploadCloudStorage(tar); err != nil {
-			return NewServiceError(
-				fmt.Sprintf("Failed to upload source arvhive to %v", s.sourcePath),
-				err,
-			)
+			if err := s.uploadCloudStorage(tar); err != nil {
+				return NewServiceError(
+					fmt.Sprintf("Failed to upload source arvhive to %v", s.sourcePath),
+					err,
+				)
+			}
+			return nil
+		}(); err != nil {
+			if (s.Config.MaxUploadTryCount <= 0 || backoff.Attempt() < s.Config.MaxUploadTryCount) &&
+				isRetryableError(err) {
+				log.WithError(err).WithField("attempt", backoff.Attempt()).
+					Warning("Failed to upload. Retrying...")
+				backoff.Sleep()
+				continue
+			}
+			return err
 		}
-		return nil
-	}(); err != nil {
-		return err
+		break
 	}
 
-	buildID, err := s.runCloudBuild(build)
-	if err != nil {
-		return NewServiceError(
-			fmt.Sprintf("Failed to create a new build for source arvhive %v", s.sourcePath),
-			err,
-		)
+	var buildID string
+	for backoff := NewBackoff(); true; {
+		buildID, err = s.runCloudBuild(build)
+		if err != nil {
+			if (s.Config.MaxStartBuildTryCount <= 0 || backoff.Attempt() < s.Config.MaxStartBuildTryCount) &&
+				isRetryableError(err) {
+				log.WithError(err).WithField("attempt", backoff.Attempt()).
+					Warning("Failed to start build. Retrying...")
+				backoff.Sleep()
+				continue
+			}
+			return NewServiceError(
+				fmt.Sprintf("Failed to create a new build for source arvhive %v", s.sourcePath),
+				err,
+			)
+		}
+		break
 	}
 
 	status, err := s.watchCloudBuild(buildID)
@@ -185,6 +205,14 @@ func (s *CloudBuildSubmit) uploadCloudStorage(stream io.Reader) error {
 	objectPath := s.sourcePath.Object
 
 	ctx := context.Background()
+	if s.Config.UploadTimeoutMsec > 0 {
+		timeoutCtx, cancel := context.WithTimeout(
+			ctx,
+			time.Duration(s.Config.UploadTimeoutMsec)*time.Millisecond,
+		)
+		ctx = timeoutCtx
+		defer cancel()
+	}
 	client, err := storage.NewClient(ctx)
 	if err != nil {
 		return xerrors.Errorf("Failed to initialize gcs client: %w", err)
@@ -219,7 +247,16 @@ func (s *CloudBuildSubmit) runCloudBuild(build *cloudbuild.Build) (string, error
 	}
 	buildService := cloudbuild.NewProjectsBuildsService(service)
 	call := buildService.Create(s.Config.Project, build)
-	operation, err := call.Do()
+	createCtx := ctx
+	if s.Config.CloudBuildTimeoutMsec > 0 {
+		timeoutCtx, cancel := context.WithTimeout(
+			createCtx,
+			time.Duration(s.Config.CloudBuildTimeoutMsec)*time.Millisecond,
+		)
+		createCtx = timeoutCtx
+		defer cancel()
+	}
+	operation, err := call.Context(createCtx).Do()
 	if err != nil {
 		return "", xerrors.Errorf("Failed to start build: %w", err)
 	}
@@ -243,12 +280,35 @@ func (s *CloudBuildSubmit) watchCloudBuild(buildID string) (string, error) {
 	buildService := cloudbuild.NewProjectsBuildsService(service)
 
 	call := buildService.Get(s.Config.Project, buildID)
-	build, err := call.Do()
-	if err != nil {
-		return "", NewServiceError(
-			fmt.Sprintf("Failed to stat build %s", buildID),
-			err,
-		)
+	var build *cloudbuild.Build
+	for backoff := NewBackoff(); true; {
+		if build, err = func() (*cloudbuild.Build, error) {
+			getCtx := ctx
+			if s.Config.CloudBuildTimeoutMsec > 0 {
+				timeoutCtx, cancel := context.WithTimeout(
+					getCtx,
+					time.Duration(s.Config.CloudBuildTimeoutMsec)*time.Millisecond,
+				)
+				defer cancel()
+				getCtx = timeoutCtx
+			}
+			return call.Context(getCtx).Do()
+		}(); err != nil {
+			if (s.Config.MaxGetBuildTryCount <= 0 || backoff.Attempt() < s.Config.MaxGetBuildTryCount) &&
+				isRetryableError(err) {
+				log.WithError(err).
+					WithField("build", buildID).
+					WithField("attempt", backoff.Attempt()).
+					Warning("Failed to stat build. Retrying...")
+				backoff.Sleep()
+				continue
+			}
+			return "", NewServiceError(
+				fmt.Sprintf("Failed to stat build %s", buildID),
+				err,
+			)
+		}
+		break
 	}
 	log.WithField("build", build).Trace("Stat build")
 
@@ -259,7 +319,9 @@ func (s *CloudBuildSubmit) watchCloudBuild(buildID string) (string, error) {
 	}
 	bucketName := logURL.Bucket
 	objectPath := logURL.Object
-	log.WithField("gcsUrl", logURL).Trace("Stat log")
+	log.WithField("gcsBucket", bucketName).
+		WithField("gcsObject", objectPath).
+		Trace("Stat log")
 
 	gcsClient, err := storage.NewClient(ctx)
 	if err != nil {
@@ -267,99 +329,129 @@ func (s *CloudBuildSubmit) watchCloudBuild(buildID string) (string, error) {
 	}
 	logObject := gcsClient.Bucket(bucketName).Object(objectPath)
 
-	complete := false
-	cbErrCount := 0
-	gcsErrCount := 0
-	offset := int64(0)
+	w := &watchLogStatus{
+		config:       &s.Config,
+		ctx:          ctx,
+		build:        build,
+		getBuildCall: call,
+		cbAttempt:    0,
+		logObject:    logObject,
+		gcsAttempt:   0,
+		offset:       0,
+		complete:     false,
+	}
 
-	for !complete {
-		if build, err = call.Do(); err != nil {
-			cbErrCount++
-			if s.Config.MaxGetBuildErrorCount > 0 &&
-				cbErrCount >= s.Config.MaxGetBuildErrorCount {
-				return "", NewServiceError(
-					fmt.Sprintf("Failed to stat build %v", buildID),
-					err,
-				)
-			}
-			log.WithError(err).WithField("buildID", buildID).WithField("errCount", cbErrCount).Warn("Failed to stat build")
-		} else {
-			cbErrCount = 0
-			if isBuildCompleted(build.Status) {
-				log.WithField("build", build).Trace("Build completed")
-				complete = true
-			}
-		}
-		if reader, err := logObject.NewRangeReader(ctx, offset, -1); err != nil {
-			if !isIgnorableGcsError(err) {
-				gcsErrCount++
-				if s.Config.MaxReadLogErrorCount > 0 &&
-					gcsErrCount >= s.Config.MaxReadLogErrorCount {
-					return "", NewServiceError(
-						"Failed to read log",
-						err,
-					)
-				}
-				log.WithError(err).
-					WithField("gcsUrl", logURL).
-					WithField("errCount", gcsErrCount).
-					WithField("offset", offset).
-					Warn("Failed to stat log stream")
-			} else {
-				log.WithError(err).
-					WithField("gcsUrl", logURL).
-					WithField("offset", offset).
-					Trace("Ignorable error for stating log stream")
-				gcsErrCount = 0
-			}
-		} else {
-			if err := func() error {
-				defer reader.Close()
-				if count, err := io.Copy(os.Stdout, reader); err != nil {
-					if !isIgnorableGcsError(err) {
-						gcsErrCount++
-						if s.Config.MaxReadLogErrorCount > 0 &&
-							gcsErrCount >= s.Config.MaxReadLogErrorCount {
-							return NewServiceError(
-								"Failed to read log",
-								err,
-							)
-						}
-						log.WithError(err).
-							WithField("gcsUrl", logURL).
-							WithField("errCount", gcsErrCount).
-							WithField("offset", offset).
-							WithField("count", count).
-							Warn("Failed to read log stream")
-						offset += count
-					} else {
-						log.WithError(err).
-							WithField("gcsUrl", logURL).
-							WithField("offset", offset).
-							WithField("count", count).
-							Trace("Ignorable error for reading log stream")
-						gcsErrCount = 0
-						offset += count
-					}
-				} else {
-					gcsErrCount = 0
-					offset += count
-				}
-				return nil
-			}(); err != nil {
-				return "", err
-			}
+	for !w.complete {
+		if err := w.watchLog(); err != nil {
+			return "", err
 		}
 		time.Sleep(time.Duration(s.Config.PollingIntervalMsec) * time.Millisecond)
 	}
+	build = w.build
 	log.WithField("build", build).
-		WithField("gcsUrl", logURL).
-		WithField("logSize", offset).
+		WithField("gcsBucket", logURL.Bucket).
+		WithField("gcsObject", logURL.Object).
+		WithField("logSize", w.offset).
 		Debug("Finished to watch build")
 	log.WithField("buildID", build.Id).
 		WithField("status", build.Status).
 		Info("Finished to watch build")
 	return build.Status, nil
+}
+
+type watchLogStatus struct {
+	config       *Config
+	ctx          context.Context
+	build        *cloudbuild.Build
+	getBuildCall *cloudbuild.ProjectsBuildsGetCall
+	cbAttempt    int
+	logObject    *storage.ObjectHandle
+	offset       int64
+	gcsAttempt   int
+	complete     bool
+}
+
+func (w *watchLogStatus) watchLog() error {
+	w.cbAttempt++
+	if newBuild, err := func() (*cloudbuild.Build, error) {
+		getCtx := w.ctx
+		if w.config.CloudBuildTimeoutMsec > 0 {
+			timeoutCtx, cancel := context.WithTimeout(
+				getCtx,
+				time.Duration(w.config.CloudBuildTimeoutMsec)*time.Millisecond,
+			)
+			defer cancel()
+			getCtx = timeoutCtx
+		}
+		return w.getBuildCall.Context(getCtx).Do()
+	}(); err != nil {
+		if (w.config.MaxGetBuildTryCount > 0 && w.cbAttempt >= w.config.MaxGetBuildTryCount) ||
+			!isRetryableError(err) {
+			return NewServiceError(
+				fmt.Sprintf("Failed to stat build %v", w.build.Id),
+				err,
+			)
+		}
+		log.WithError(err).
+			WithField("buildID", w.build.Id).
+			WithField("attempt", w.cbAttempt).
+			Warn("Failed to stat build")
+	} else {
+		w.build = newBuild
+		w.cbAttempt = 0
+		if isBuildCompleted(w.build.Status) {
+			log.WithField("build", w.build).Trace("Build completed")
+			w.complete = true
+		}
+	}
+	w.gcsAttempt++
+	if count, err := func() (int64, error) {
+		readCtx := w.ctx
+		if w.config.ReadLogTimeoutMsec > 0 {
+			timeoutCtx, cancel := context.WithTimeout(
+				readCtx,
+				time.Duration(w.config.ReadLogTimeoutMsec)*time.Millisecond,
+			)
+			defer cancel()
+			readCtx = timeoutCtx
+		}
+		reader, err := w.logObject.NewRangeReader(readCtx, w.offset, -1)
+		if err != nil {
+			return int64(0), err
+		}
+		defer reader.Close()
+		return io.Copy(os.Stdout, reader)
+	}(); err != nil {
+		if !isIgnorableGcsError(err) {
+			if (w.config.MaxReadLogTryCount > 0 && w.gcsAttempt >= w.config.MaxReadLogTryCount) ||
+				!isRetryableError(err) {
+				return NewServiceError(
+					"Failed to read log",
+					err,
+				)
+			}
+			log.WithError(err).
+				WithField("gcsBucket", w.logObject.BucketName()).
+				WithField("gcsObject", w.logObject.ObjectName()).
+				WithField("attempt", w.gcsAttempt).
+				WithField("offset", w.offset).
+				WithField("size", count).
+				Warn("Failed to read log")
+		} else {
+			log.WithError(err).
+				WithField("gcsBucket", w.logObject.BucketName()).
+				WithField("gcsObject", w.logObject.ObjectName()).
+				WithField("offset", w.offset).
+				WithField("size", count).
+				Trace("Ignorable error for reading log stream")
+			w.gcsAttempt = 0
+		}
+		w.offset += count
+	} else {
+		w.gcsAttempt = 0
+		w.offset += count
+	}
+	return nil
 }
 
 func isBuildCompleted(status string) bool {
@@ -376,20 +468,4 @@ func isBuildCompleted(status string) bool {
 		status == "INTERNAL_ERROR" ||
 		status == "TIMEOUT" ||
 		status == "CANCELLED"
-}
-
-func isIgnorableGcsError(err error) bool {
-	if err == nil {
-		return true
-	}
-
-	var apiError *googleapi.Error
-	if !xerrors.As(err, &apiError) {
-		return false
-	}
-	// We can ignore 404 (the log file isn't ready yet) and 416 (no new contents)
-	if apiError.Code == 404 || apiError.Code == 416 {
-		return true
-	}
-	return false
 }

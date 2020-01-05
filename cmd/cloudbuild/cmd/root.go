@@ -18,7 +18,9 @@ var rootCmd = &cobra.Command{
 	Long: `Launch a build for Google Cloud Build:
 
 TODO`,
-	Args: cobra.ExactValidArgs(1),
+	SilenceErrors: true,
+	SilenceUsage:  true,
+	Args:          cobra.ExactValidArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		initLevel()
 		submit := &internal.CloudBuildSubmit{}
@@ -72,6 +74,15 @@ func init() {
 	viper.BindPFlag("config", rootCmd.Flags().Lookup("config"))
 	rootCmd.Flags().StringSliceP("substitutions", "s", []string{}, "key=value expression to replace keywords in cloudbuild.yaml. Accepts multiple times.")
 	viper.BindPFlag("substitutions", rootCmd.Flags().Lookup("substitutions"))
+
+	viper.SetDefault("pollingIntervalMsec", 500)
+	viper.SetDefault("uploadTimeoutMsec", 5*60*1000)
+	viper.SetDefault("maxUploadTryCount", 5)
+	viper.SetDefault("cloudBuildTimeoutMsec", 10*1000)
+	viper.SetDefault("maxStartBuildTryCount", 5)
+	viper.SetDefault("maxGetBuildTryCount", 100)
+	viper.SetDefault("readLogTimeoutMsec", 30*1000)
+	viper.SetDefault("maxReadLogTryCount", 100)
 }
 
 // initLevel initializes the log level.
