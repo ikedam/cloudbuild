@@ -1,6 +1,8 @@
 package cmd
 
 import (
+	"os"
+
 	"github.com/ikedam/cloudbuild/internal"
 	"github.com/ikedam/cloudbuild/log"
 	homedir "github.com/mitchellh/go-homedir"
@@ -106,17 +108,34 @@ func initConfig() {
 			log.Exit(internal.ExitCodeConfigurationError)
 		}
 
-		// Search config in home directory with name ".cloudbuild" (without extension).
+		// Search config in home directory with name ".cloudbuildconfig" (without extension).
 		viper.AddConfigPath(home)
-		viper.SetConfigName(".cloudbuild")
+		viper.SetConfigName(".cloudbuildconfig")
 	}
 
 	viper.AutomaticEnv() // read in environment variables that match
+	viper.SetEnvPrefix("CLOUDBUILD")
+
+	// Read /etc/cloudbuild/config.yaml
+	globalFile := "/etc/cloudbuild/config.yaml"
+	if _, err := os.Stat(globalFile); err == nil {
+		func() {
+			log.WithField("file", globalFile).Debug("reading global config")
+			fd, err := os.Open(globalFile)
+			if err != nil {
+				log.WithError(err).WithField("file", globalFile).Warning("Failed to open global config")
+				return
+			}
+			defer fd.Close()
+			if err := viper.ReadConfig(fd); err != nil {
+				log.WithError(err).WithField("file", globalFile).Warning("Failed to read global config")
+				return
+			}
+		}()
+	}
 
 	// If a config file is found, read it in.
 	if err := viper.ReadInConfig(); err == nil {
 		log.WithField("configfile", viper.ConfigFileUsed).Trace("Using config file")
-	} else {
-		log.WithError(err).WithField("configfile", viper.ConfigFileUsed).Warning("Failed to read config file")
 	}
 }

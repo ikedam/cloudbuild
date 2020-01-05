@@ -1,0 +1,21 @@
+# Configuration file for `cloudbuild` command.
+# You can put this at /etc/cloudbuild/config.yaml or $HOME/.cloudbuildconfig.yaml
+
+# Configuations also configurable with command line options:
+
+# project: your-project
+# gcsSourceStagingDir: gs://your-bucket/dir
+# IgnoreFile string: /path/to/ignorefile or relative/path/to/ignorefile
+# config: path/to/cloudbuild.yaml
+# logLevel: warn
+
+# Configurations available only in this file
+
+# pollingIntervalMsec: 500
+# uploadTimeoutMsec: 300000
+# maxUploadTryCount: 5
+# cloudBuildTimeoutMsec: 10000
+# maxStartBuildTryCount: 5
+# maxGetBuildTryCount: 100
+# readLogTimeoutMsec: 30000
+# maxReadLogTryCount: 100
