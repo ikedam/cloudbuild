@@ -20,23 +20,31 @@ var rootCmd = &cobra.Command{
 	Long: `Launch a build for Google Cloud Build:
 
 TODO`,
-	SilenceErrors: true,
-	SilenceUsage:  true,
-	Args:          cobra.ExactValidArgs(1),
-	RunE: func(cmd *cobra.Command, args []string) error {
+	Args: cobra.ExactValidArgs(1),
+	Run: func(cmd *cobra.Command, args []string) {
 		initLevel()
 		submit := &internal.CloudBuildSubmit{}
 
-		if err := viper.Unmarshal(&submit.Config); err != nil {
-			return internal.NewConfigError("Failed to parse configurations", err)
-		}
-		if err := submit.Config.ResolveDefaults(); err != nil {
-			return err
-		}
-		submit.Config.SourceDir = args[0]
-		log.WithField("configuration", &submit.Config).Trace("Initialized configuration")
+		if err := func() error {
+			if err := viper.Unmarshal(&submit.Config); err != nil {
+				return internal.NewConfigError("Failed to parse configurations", err)
+			}
+			if err := submit.Config.ResolveDefaults(); err != nil {
+				return err
+			}
+			submit.Config.SourceDir = args[0]
+			log.WithField("configuration", &submit.Config).Trace("Initialized configuration")
 
-		return submit.Execute()
+			return submit.Execute()
+		}(); err != nil {
+			var buildResultError *internal.BuildResultError
+			if xerrors.As(err, &buildResultError) {
+				log.Errorf("Build failed with %+v", buildResultError.Status)
+			} else {
+				log.WithError(err).Error("Failed to run a build")
+			}
+			log.Exit(internal.ExitCodeForError(err))
+		}
 	},
 }
 
@@ -44,13 +52,8 @@ TODO`,
 // This is called by main.main(). It only needs to happen once to the rootCmd.
 func Execute() {
 	if err := rootCmd.Execute(); err != nil {
-		var buildResultError *internal.BuildResultError
-		if xerrors.As(err, &buildResultError) {
-			log.Errorf("Build failed with %+v", buildResultError.Status)
-		} else {
-			log.WithError(err).Error("Failed to run a build")
-		}
-		log.Exit(internal.ExitCodeForError(err))
+		log.WithError(err).Errorf("Failed to launch the command")
+		log.Exit(internal.ExitCodeConfigurationError)
 	}
 }
 
