@@ -7,7 +7,7 @@
 # gcsSourceStagingDir: gs://your-bucket/dir
 # IgnoreFile string: /path/to/ignorefile or relative/path/to/ignorefile
 # config: path/to/cloudbuild.yaml
-# logLevel: warn
+# logLevel: info
 
 # Configurations available only in this file
 

@@ -66,7 +66,7 @@ func init() {
 	// will be global for your application.
 
 	// rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is $HOME/.cloudbuild.yaml)")
-	rootCmd.PersistentFlags().String("log-level", "warn", "Log level.")
+	rootCmd.PersistentFlags().String("log-level", "info", "Log level.")
 	viper.BindPFlag("logLevel", rootCmd.PersistentFlags().Lookup("log-level"))
 
 	rootCmd.Flags().String("project", "", "ID of Google Cloud Project.")

@@ -229,7 +229,7 @@ func (s *CloudBuildSubmit) uploadCloudStorage(stream io.Reader) error {
 }
 
 func (s *CloudBuildSubmit) runCloudBuild(build *cloudbuild.Build) (string, error) {
-	log.WithField("source", s.sourcePath).Info("Starting build")
+	log.WithField("source", s.sourcePath).Info("Queueing build")
 	bucketName := s.sourcePath.Bucket
 	objectPath := s.sourcePath.Object
 
@@ -243,7 +243,7 @@ func (s *CloudBuildSubmit) runCloudBuild(build *cloudbuild.Build) (string, error
 	ctx := context.Background()
 	service, err := cloudbuild.NewService(ctx)
 	if err != nil {
-		return "", xerrors.Errorf("Failed to create cloudbuild service: %w", err)
+		return "", xerrors.Errorf("Failed to create coudbuild service: %w", err)
 	}
 	buildService := cloudbuild.NewProjectsBuildsService(service)
 	call := buildService.Create(s.Config.Project, build)
@@ -258,7 +258,7 @@ func (s *CloudBuildSubmit) runCloudBuild(build *cloudbuild.Build) (string, error
 	}
 	operation, err := call.Context(createCtx).Do()
 	if err != nil {
-		return "", xerrors.Errorf("Failed to start build: %w", err)
+		return "", xerrors.Errorf("Failed to queue build: %w", err)
 	}
 
 	metadata := &cloudbuild.BuildOperationMetadata{}
@@ -266,7 +266,7 @@ func (s *CloudBuildSubmit) runCloudBuild(build *cloudbuild.Build) (string, error
 		return "", xerrors.Errorf("Failed to parse result(%s): %w", string(operation.Metadata), err)
 	}
 	log.WithField("build", metadata).Trace("Build metadata")
-	log.WithField("build", metadata.Build.Id).Info("Build started")
+	log.WithField("build", metadata.Build.Id).Info("Build queued")
 	return metadata.Build.Id, nil
 }
 
@@ -355,7 +355,7 @@ func (s *CloudBuildSubmit) watchCloudBuild(buildID string) (string, error) {
 		Debug("Finished to watch build")
 	log.WithField("buildID", build.Id).
 		WithField("status", build.Status).
-		Info("Finished to watch build")
+		Info("Build completed")
 	return build.Status, nil
 }
 
