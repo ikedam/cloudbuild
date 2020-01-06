@@ -266,7 +266,7 @@ func (s *CloudBuildSubmit) runCloudBuild(build *cloudbuild.Build) (string, error
 		return "", xerrors.Errorf("Failed to parse result(%s): %w", string(operation.Metadata), err)
 	}
 	log.WithField("build", metadata).Trace("Build metadata")
-	log.WithField("build", metadata.Build.Id).Info("Build queued")
+	log.WithField("buildID", metadata.Build.Id).Info("Build queued")
 	return metadata.Build.Id, nil
 }
 

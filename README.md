@@ -44,6 +44,6 @@ $ docker run --rm \
 $ docker run -ti --name gcloud-config google/cloud-sdk:alpine gcloud auth application-default login
 $ docker run --rm \
     --volumes-from gcloud-config \
-    -v $(pwd):/workspace \
+    -v "$(pwd)":/workspace \
     ikedam/cloudbuild .
 ```
