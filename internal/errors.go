@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"time"
 
+	"cloud.google.com/go/storage"
+
 	"golang.org/x/xerrors"
 	"google.golang.org/api/googleapi"
 )
@@ -151,6 +153,10 @@ func ExitCodeForStatus(status string) int {
 
 func isIgnorableGcsError(err error) bool {
 	if err == nil {
+		return true
+	}
+
+	if xerrors.Is(err, storage.ErrObjectNotExist) {
 		return true
 	}
 

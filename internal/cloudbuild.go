@@ -338,7 +338,12 @@ func (s *CloudBuildSubmit) watchCloudBuild(buildID string) (string, error) {
 		logObject:    logObject,
 		gcsAttempt:   0,
 		offset:       0,
+		started:      false,
 		complete:     false,
+	}
+
+	if w.build.Status == "QUEUED" {
+		log.Info("Waiting build starts...")
 	}
 
 	for !w.complete {
@@ -368,6 +373,7 @@ type watchLogStatus struct {
 	logObject    *storage.ObjectHandle
 	offset       int64
 	gcsAttempt   int
+	started      bool
 	complete     bool
 }
 
@@ -399,11 +405,16 @@ func (w *watchLogStatus) watchLog() error {
 	} else {
 		w.build = newBuild
 		w.cbAttempt = 0
-		if isBuildCompleted(w.build.Status) {
-			log.WithField("build", w.build).Trace("Build completed")
-			w.complete = true
-		}
 	}
+
+	if !w.started {
+		if w.build.Status == "QUEUED" {
+			return nil
+		}
+		log.Info("Build started")
+		w.started = true
+	}
+
 	w.gcsAttempt++
 	if count, err := func() (int64, error) {
 		readCtx := w.ctx
@@ -451,6 +462,12 @@ func (w *watchLogStatus) watchLog() error {
 		w.gcsAttempt = 0
 		w.offset += count
 	}
+
+	if isBuildCompleted(w.build.Status) {
+		log.WithField("build", w.build).Trace("Build completed")
+		w.complete = true
+	}
+
 	return nil
 }
 
