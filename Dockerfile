@@ -13,4 +13,4 @@ COPY LICENSE /
 COPY cloudbuildconfig.yaml /etc/cloudbuild/config.yaml
 COPY --from=build /workspace/cloudbuild /
 
-ENTRYPOINT /cloudbuild
+ENTRYPOINT ["/cloudbuild"]
