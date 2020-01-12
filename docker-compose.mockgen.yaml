@@ -1,0 +1,28 @@
+version: '2.3'
+services:
+  mockgen:
+    build:
+      context: .
+      dockerfile: Dockerfile.mockgen
+      args:
+        - http_proxy
+        - https_proxy
+    environment:
+      - http_proxy
+      - https_proxy
+    volumes:
+      - .:/workspace
+    working_dir: /workspace
+    command:
+      - /bin/sh
+      - -c
+      - |
+        set -e
+        DIR=$$( \
+          go list -f '{{.Dir}}' \
+          google.golang.org/genproto/googleapis/devtools/cloudbuild/v1 \
+        )
+        mockgen \
+          -source="$${DIR}/cloudbuild.pb.go" \
+          -package=testutil \
+          -destination=testutil/mockgen_cloudbuild.go
