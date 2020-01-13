@@ -21,6 +21,6 @@ services:
         go get -d google.golang.org/genproto/googleapis/devtools/cloudbuild/v1
         mockgen \
           -package=testutil \
-          -destination=testutil/cloudbuild_mockgen.go \
+          -destination=testutil/cloudbuild_grpc_mockgen.go \
           google.golang.org/genproto/googleapis/devtools/cloudbuild/v1 \
           CloudBuildServer
