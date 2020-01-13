@@ -30,8 +30,22 @@ import (
 type CloudBuildSubmit struct {
 	Config
 	sourcePath     *GcsPath
+	cbService      *cloudbuild.Service
 	buildID        string
 	completeStatus string
+}
+
+func (s *CloudBuildSubmit) getCloudBuildService() (*cloudbuild.Service, error) {
+	if s.cbService != nil {
+		return s.cbService, nil
+	}
+	ctx := context.Background()
+	service, err := cloudbuild.NewService(ctx)
+	if err != nil {
+		return nil, xerrors.Errorf("Failed to create coudbuild service: %w", err)
+	}
+	s.cbService = service
+	return service, nil
 }
 
 // Execute performs the sequence to submit a build to CloudBuild
@@ -242,14 +256,13 @@ func (s *CloudBuildSubmit) runCloudBuild(build *cloudbuild.Build) error {
 		},
 	}
 
-	ctx := context.Background()
-	service, err := cloudbuild.NewService(ctx)
+	service, err := s.getCloudBuildService()
 	if err != nil {
 		return xerrors.Errorf("Failed to create coudbuild service: %w", err)
 	}
 	buildService := cloudbuild.NewProjectsBuildsService(service)
 	call := buildService.Create(s.Config.Project, build)
-	createCtx := ctx
+	createCtx := context.Background()
 	if s.Config.CloudBuildTimeoutMsec > 0 {
 		timeoutCtx, cancel := context.WithTimeout(
 			createCtx,
@@ -276,7 +289,7 @@ func (s *CloudBuildSubmit) runCloudBuild(build *cloudbuild.Build) error {
 func (s *CloudBuildSubmit) watchCloudBuild(buildID string) (string, error) {
 	log.WithField("source", s.sourcePath).Debug("Watching build")
 	ctx := context.Background()
-	service, err := cloudbuild.NewService(ctx)
+	service, err := s.getCloudBuildService()
 	if err != nil {
 		return "", NewServiceError("Failed to create cloudbuild service", err)
 	}
@@ -506,25 +519,24 @@ func (s *CloudBuildSubmit) Cancel() error {
 	log.WithField("buildID", s.buildID).
 		Info("Canceling build...")
 
-	ctx := context.Background()
-	service, err := cloudbuild.NewService(ctx)
+	service, err := s.getCloudBuildService()
 	if err != nil {
 		return xerrors.Errorf("Failed to create coudbuild service: %w", err)
 	}
 	cancel := &cloudbuild.CancelBuildRequest{}
 	buildService := cloudbuild.NewProjectsBuildsService(service)
 	call := buildService.Cancel(s.Project, s.buildID, cancel)
-	createCtx := ctx
+	cancelCtx := context.Background()
 	if s.Config.CloudBuildTimeoutMsec > 0 {
 		timeoutCtx, cancel := context.WithTimeout(
-			createCtx,
+			cancelCtx,
 			time.Duration(s.Config.CloudBuildTimeoutMsec)*time.Millisecond,
 		)
-		createCtx = timeoutCtx
+		cancelCtx = timeoutCtx
 		defer cancel()
 	}
 	for backoff := NewBackoff(); true; {
-		if _, err := call.Context(createCtx).Do(); err != nil {
+		if _, err := call.Context(cancelCtx).Do(); err != nil {
 			if googleapi.IsNotModified(err) {
 				break
 			}
