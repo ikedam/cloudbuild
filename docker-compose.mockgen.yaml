@@ -18,11 +18,9 @@ services:
       - -c
       - |
         set -e
-        DIR=$$( \
-          go list -f '{{.Dir}}' \
-          google.golang.org/genproto/googleapis/devtools/cloudbuild/v1 \
-        )
+        go get -d google.golang.org/genproto/googleapis/devtools/cloudbuild/v1
         mockgen \
-          -source="$${DIR}/cloudbuild.pb.go" \
           -package=testutil \
-          -destination=testutil/cloudbuild_mockgen.go
+          -destination=testutil/cloudbuild_mockgen.go \
+          google.golang.org/genproto/googleapis/devtools/cloudbuild/v1 \
+          CloudBuildServer
