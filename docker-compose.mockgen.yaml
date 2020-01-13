@@ -25,4 +25,4 @@ services:
         mockgen \
           -source="$${DIR}/cloudbuild.pb.go" \
           -package=testutil \
-          -destination=testutil/mockgen_cloudbuild.go
+          -destination=testutil/cloudbuild_mockgen.go
