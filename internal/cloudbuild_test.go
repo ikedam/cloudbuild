@@ -18,7 +18,7 @@ import (
 )
 
 func TestRunCloudBuild(t *testing.T) {
-	mockServer := testutil.SetupMockCloudBuildServer(t)
+	mockServer := testutil.SetupMockGrpcCloudBuildServer(t)
 	if mockServer == nil {
 		t.Skip()
 	}
