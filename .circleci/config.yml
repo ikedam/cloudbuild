@@ -46,7 +46,10 @@ workflows:
   version: 2
   deploy-dockerhub:
     jobs:
-      - build-docker
+      - build-docker:
+          filters:
+            tags:
+              only: /^cloudbuild-([0-9.]+)$/
       - deploy-to-dockerhub:
           requires:
             - build-docker
