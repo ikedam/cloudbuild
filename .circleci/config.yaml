@@ -1,0 +1,57 @@
+version: 2
+jobs:
+  build-docker:
+    working_directory: /go/src/github.com/ikedam/cloudbuild
+    docker:
+      - image: circleci/golang:1.13
+    steps:
+      - checkout
+      - setup_remote_docker
+      - run:
+          name: Build the docker image
+          command: docker build -t cloudbuild .
+      - run:
+          name: Save the docker image
+          command: docker image save -o cloudbuild-docker-image.tar cloudbuild
+      - persist_to_workspace:
+          root: .
+          paths:
+            - cloudbuild-docker-image.tar
+  deploy-to-dockerhub:
+    docker:
+      - image: circleci/golang:1.13
+    steps:
+      - setup_remote_docker
+      - attach_workspace:
+          at: .
+      - run:
+          name: Load the docker image
+          command: docker load -i cloudbuild-docker-image.tar
+      - run:
+          name: Login to dockerhub
+          command:|
+            echo "${DOCKERHUB_PASSWORD}" \
+            | docker login -u "${DOCKERHUB_USERNAME}" --password-stdin
+      - run:
+          name: Deploy docker
+          command:|
+            docker tag cloudbuild ikedam/cloudbuild:latest
+            docker push ikedam/cloudbuild:latest
+            if [[ -n "${CIRCLE_TAG}" ]]; then
+              TAG=${CIRCLE_TAG#cloudbuild-}
+              docker tag cloudbuild ikedam/cloudbuild:${TAG}
+              docker push ikedam/cloudbuild:${TAG}
+            fi
+workflows:
+  version: 2
+  deploy-dockerhub:
+    jobs:
+      - build-docker
+      - deploy-to-dockerhub:
+          requires:
+            - build-docker
+          filters:
+            branches:
+              ignore: /.*/
+            tags:
+              only: /^cloudbuild-([0-9.]+)$/
