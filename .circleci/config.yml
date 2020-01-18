@@ -29,12 +29,12 @@ jobs:
           command: docker load -i cloudbuild-docker-image.tar
       - run:
           name: Login to dockerhub
-          command:|
+          command: |
             echo "${DOCKERHUB_PASSWORD}" \
             | docker login -u "${DOCKERHUB_USERNAME}" --password-stdin
       - run:
           name: Deploy docker
-          command:|
+          command: |
             docker tag cloudbuild ikedam/cloudbuild:latest
             docker push ikedam/cloudbuild:latest
             if [[ -n "${CIRCLE_TAG}" ]]; then
