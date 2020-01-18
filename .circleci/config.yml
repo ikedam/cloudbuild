@@ -35,13 +35,13 @@ jobs:
       - run:
           name: Deploy docker
           command: |
-            docker tag cloudbuild ikedam/cloudbuild:latest
-            docker push ikedam/cloudbuild:latest
             if [[ -n "${CIRCLE_TAG}" ]]; then
               TAG=${CIRCLE_TAG#cloudbuild-}
               docker tag cloudbuild ikedam/cloudbuild:${TAG}
               docker push ikedam/cloudbuild:${TAG}
             fi
+            docker tag cloudbuild ikedam/cloudbuild:latest
+            docker push ikedam/cloudbuild:latest
 workflows:
   version: 2
   deploy-dockerhub:
