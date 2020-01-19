@@ -10,21 +10,26 @@ import (
 	"google.golang.org/grpc"
 )
 
-// MockGrpcCloudBuildServer is launched mocked cloud build server
-type MockGrpcCloudBuildServer struct {
-	Addr   net.Addr
+// MockCloudBuildGrpcServerSetup is launched mocked cloud build server
+type MockCloudBuildGrpcServerSetup struct {
 	Mock   *MockCloudBuildServer
 	ctrl   *gomock.Controller
 	server *grpc.Server
+	addr   net.Addr
+}
+
+// Addr returns bound address
+func (m *MockCloudBuildGrpcServerSetup) Addr() net.Addr {
+	return m.addr
 }
 
 // Close stops the mocked server
-func (m *MockGrpcCloudBuildServer) Close() {
+func (m *MockCloudBuildGrpcServerSetup) Close() {
 	m.server.Stop()
 	m.ctrl.Finish()
 }
 
-// SetupMockGrpcCloudBuildServer starts a server for mocked cloud build.
+// SetupMockCloudBuildGrpcServer starts a server for mocked cloud build.
 // The return value holds the information for the launched server.
 // Ensure to call `Close()` for the returned value when test finishes,
 // recommended to call with `defer`.
@@ -32,7 +37,7 @@ func (m *MockGrpcCloudBuildServer) Close() {
 // return value.
 // Skip the test if the return value is `nil`, as it means
 // the mocked cloud build server is not supported.
-func SetupMockGrpcCloudBuildServer(t *testing.T) *MockGrpcCloudBuildServer {
+func SetupMockCloudBuildGrpcServer(t *testing.T) *MockCloudBuildGrpcServerSetup {
 	l, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatalf("Failed to bind address: %+v", err)
@@ -45,10 +50,10 @@ func SetupMockGrpcCloudBuildServer(t *testing.T) *MockGrpcCloudBuildServer {
 	pb.RegisterCloudBuildServer(s, mock)
 	go s.Serve(l)
 
-	return &MockGrpcCloudBuildServer{
-		Addr:   l.Addr(),
+	return &MockCloudBuildGrpcServerSetup{
 		Mock:   mock,
-		server: s,
 		ctrl:   ctrl,
+		server: s,
+		addr:   l.Addr(),
 	}
 }

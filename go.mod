@@ -16,18 +16,20 @@ require (
 	github.com/golang/mock v1.3.1
 	github.com/golang/protobuf v1.3.2
 	github.com/googleapis/gax-go v2.0.2+incompatible // indirect
+	github.com/labstack/echo v3.3.10+incompatible
+	github.com/labstack/gommon v0.3.0 // indirect
 	github.com/mitchellh/go-homedir v1.1.0
 	github.com/opencontainers/image-spec v1.0.1 // indirect
 	github.com/rs/xid v1.2.1
 	github.com/sirupsen/logrus v1.4.2
 	github.com/spf13/cobra v0.0.5
 	github.com/spf13/viper v1.6.1
-	github.com/stretchr/testify v1.2.2
+	github.com/stretchr/testify v1.4.0
 	golang.org/x/oauth2 v0.0.0-20190604053449-0f29369cfe45
 	golang.org/x/sys v0.0.0-20191228213918-04cbcbbfeed8 // indirect
 	golang.org/x/xerrors v0.0.0-20191204190536-9bdfabe68543
 	google.golang.org/api v0.15.0
-	google.golang.org/genproto v0.0.0-20200108215221-bd8f9a0ef82f
+	google.golang.org/genproto v0.0.0-20200117163144-32f20d992d24
 	google.golang.org/grpc v1.21.1
 	gopkg.in/yaml.v3 v3.0.0-20191120175047-4206685974f2
 )

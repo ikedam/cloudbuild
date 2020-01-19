@@ -24,3 +24,8 @@ services:
           -destination=testutil/cloudbuild_grpc_mockgen.go \
           google.golang.org/genproto/googleapis/devtools/cloudbuild/v1 \
           CloudBuildServer
+        mockgen \
+          -package=testutil \
+          -destination=testutil/cloudbuild_rest_mockgen.go \
+          github.com/ikedam/cloudbuild/testutil \
+          CloudBuildRESTServer
