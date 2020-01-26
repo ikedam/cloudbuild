@@ -13,7 +13,7 @@ require (
 	cloud.google.com/go/storage v1.0.0
 	github.com/Microsoft/hcsshim v0.8.7 // indirect
 	github.com/docker/docker v0.0.0-00010101000000-000000000000
-	github.com/golang/mock v1.3.1
+	github.com/golang/mock v1.4.0
 	github.com/golang/protobuf v1.3.2
 	github.com/googleapis/gax-go v2.0.2+incompatible // indirect
 	github.com/labstack/echo v3.3.10+incompatible
@@ -32,4 +32,5 @@ require (
 	google.golang.org/genproto v0.0.0-20200117163144-32f20d992d24
 	google.golang.org/grpc v1.21.1
 	gopkg.in/yaml.v3 v3.0.0-20191120175047-4206685974f2
+	rsc.io/sampler v1.99.99 // indirect
 )
