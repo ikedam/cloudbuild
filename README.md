@@ -19,6 +19,12 @@ Features
         * `--machine-type`
         * `--timeout`
         * `--tag / -t`
+    * Options with different behaviors:
+        * `--substitutions`
+            * Add multiple `--substitutions` for multiple key-values. E.g.
+                ```
+                --substitutions _key1=value2 --substitutions _key2=value2
+                ```
 * More robust behaviors.
     * Create source archives in the same way with `docker`.
     * Retries operations.
@@ -47,3 +53,20 @@ $ docker run --rm \
     -v "$(pwd)":/workspace \
     ikedam/cloudbuild .
 ```
+
+Diagnose
+--------
+
+You can get stack dump with `SIGUSR1` signal without terminating the container:
+
+```
+$ docker kill -s USR1 "$(docker ps -q --filter ancestor=ikedam/cloudbuild)"
+```
+
+You can get stack dump and terminate the container with `ABRT` signal:
+
+```
+$ docker kill -s ABRT "$(docker ps -q --filter ancestor=ikedam/cloudbuild)"
+```
+
+You cannot get stack dump with `HUP`, `INT` or `TERM` signals (`cloudbuild` exit silengly for those signals), but you can have `cloudbuild` to print stack dumps also for those signals by passing `--always-dump` option.
