@@ -19,12 +19,10 @@ Features
         * `--machine-type`
         * `--timeout`
         * `--tag / -t`
-    * Options with different behaviors:
+    * Limited options:
         * `--substitutions`
-            * Add multiple `--substitutions` for multiple key-values. E.g.
-                ```
-                --substitutions _key1=value2 --substitutions _key2=value2
-                ```
+            * Supports only commas to separate multiple key-value pairs.
+            * `--substitution / -s` is provided instead and recommended. It allows be specified multiple times.
 * More robust behaviors.
     * Create source archives in the same way with `docker`.
     * Retries operations.

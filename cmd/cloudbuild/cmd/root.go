@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"os"
+	"strings"
 
 	"github.com/ikedam/cloudbuild/internal"
 	"github.com/ikedam/cloudbuild/internal/signal"
@@ -32,6 +33,16 @@ TODO`,
 				if err := func() error {
 					if err := viper.Unmarshal(&submit.Config); err != nil {
 						return internal.NewConfigError("Failed to parse configurations", err)
+					}
+					legacySubstitutions, err := cmd.Flags().GetString("substitutions")
+					if err != nil {
+						return err
+					}
+					if legacySubstitutions != "" {
+						submit.Config.Substitutions = append(
+							submit.Config.Substitutions,
+							strings.Split(legacySubstitutions, ",")...,
+						)
 					}
 					if err := submit.Config.ResolveDefaults(); err != nil {
 						return err
@@ -85,8 +96,10 @@ func init() {
 	viper.BindPFlag("ignoreFile", rootCmd.Flags().Lookup("ignore-file"))
 	rootCmd.Flags().StringP("config", "c", "cloudbuild.yaml", "File to use instead of cloudbuild.yaml")
 	viper.BindPFlag("config", rootCmd.Flags().Lookup("config"))
-	rootCmd.Flags().StringSliceP("substitutions", "s", []string{}, "key=value expression to replace keywords in cloudbuild.yaml. Accepts multiple times.")
-	viper.BindPFlag("substitutions", rootCmd.Flags().Lookup("substitutions"))
+	rootCmd.Flags().StringSliceP("substitution", "s", []string{}, "key=value expression to replace keywords in cloudbuild.yaml. Accepts multiple times.")
+	viper.BindPFlag("substitutions", rootCmd.Flags().Lookup("substitution"))
+	// for compatibility with `gcloud builds submit`
+	rootCmd.Flags().String("substitutions", "", "comma-separated key=value expressions to replace keywords in cloudbuild.yaml.")
 
 	viper.SetDefault("pollingIntervalMsec", 500)
 	viper.SetDefault("uploadTimeoutMsec", 5*60*1000)
