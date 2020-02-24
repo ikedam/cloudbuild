@@ -55,8 +55,11 @@ jobs:
           docker push "${DOCKERHUB_REPOSITORY}:latest"
           docker push "docker.pkg.github.com/${GITHUB_REPOSITORY}/cloudbuild:${TAG}"
           docker push "docker.pkg.github.com/${GITHUB_REPOSITORY}/cloudbuild:latest"
-      - name: Docker Hub Description
-        uses: peter-evans/dockerhub-description@v2.1.0
-        env:
-          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
-          DOCKERHUB_PASSWORD: ${{ secrets.DOCKERHUB_PASSWORD }}
+      # Cannot update the docker hub description with dockerhub token.
+      # It requires the actual password (as it's documented in dockerhub-description action).
+      # It's not a good idea to store the password and I don't activate this.
+      # - name: Docker Hub Description
+      #   uses: peter-evans/dockerhub-description@v2.1.0
+      #   env:
+      #     DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+      #     DOCKERHUB_PASSWORD: ${{ secrets.DOCKERHUB_PASSWORD }}
