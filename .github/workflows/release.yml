@@ -3,12 +3,12 @@ on:
   push:
     tags:
       - v*
+env:
+  DOCKERHUB_REPOSITORY: ikedam/cloudbuild
 jobs:
   release-github:
     name: Release to Github
     runs-on: ubuntu-latest
-    env:
-      DOCKERHUB_REPOSITORY: ikedam/cloudbuild
     steps:
       - name: Checkout
         uses: actions/checkout@v2
@@ -35,7 +35,7 @@ jobs:
       - name: Build
         run: |
           docker build -t cloudbuild \
-            --build-arg VERSION=${GITHUB_REF#v} \
+            --build-arg VERSION=${GITHUB_REF##*/v} \
             --build-arg COMMIT=${GITHUB_SHA} \
             .
       - name: Login
@@ -46,13 +46,13 @@ jobs:
             | docker login docker.pkg.github.com -u "${GITHUB_REPOSITORY%/*}" --password-stdin
       - name: Deploy
         run: |
-          TAG=${GITHUB_REF#v}
+          TAG=${GITHUB_REF##*/v}
           docker tag cloudbuild "${DOCKERHUB_REPOSITORY}:${TAG}"
           docker tag cloudbuild "${DOCKERHUB_REPOSITORY}:latest"
           docker tag cloudbuild "docker.pkg.github.com/${GITHUB_REPOSITORY}/cloudbuild:${TAG}"
           docker tag cloudbuild "docker.pkg.github.com/${GITHUB_REPOSITORY}/cloudbuild:latest"
-          docker push "${${DOCKERHUB_REPOSITORY}}:${TAG}"
-          docker push "${${DOCKERHUB_REPOSITORY}}:latest"
+          docker push "${DOCKERHUB_REPOSITORY}:${TAG}"
+          docker push "${DOCKERHUB_REPOSITORY}:latest"
           docker push "docker.pkg.github.com/${GITHUB_REPOSITORY}/cloudbuild:${TAG}"
           docker push "docker.pkg.github.com/${GITHUB_REPOSITORY}/cloudbuild:latest"
       - name: Docker Hub Description
