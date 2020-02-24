@@ -19,10 +19,7 @@ var cfgFile string
 var rootCmd = &cobra.Command{
 	Use:   "cloudbuild",
 	Short: "cloudbuild is a client application for Google Cloud Build",
-	Long: `Launch a build for Google Cloud Build:
-
-TODO`,
-	Args: cobra.ExactValidArgs(1),
+	Args:  cobra.ExactValidArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
 		initLevel()
 		signal.WithSignalStacktrace(
@@ -162,4 +159,10 @@ func initConfig() {
 	if err := viper.ReadInConfig(); err == nil {
 		log.WithField("configfile", viper.ConfigFileUsed).Trace("Using config file")
 	}
+}
+
+// SetVersion sets version of the command
+func SetVersion(version string) {
+	rootCmd.Version = version
+	rootCmd.SetVersionTemplate("{{.Version}}\n")
 }

@@ -21,8 +21,18 @@ THE SOFTWARE.
 */
 package main
 
-import "github.com/ikedam/cloudbuild/cmd/cloudbuild/cmd"
+import (
+	"fmt"
+
+	"github.com/ikedam/cloudbuild/cmd/cloudbuild/cmd"
+)
+
+var (
+	version = "dev"
+	commit  = "none"
+)
 
 func main() {
+	cmd.SetVersion(fmt.Sprintf("%v:%v", version, commit))
 	cmd.Execute()
 }
