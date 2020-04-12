@@ -3,6 +3,7 @@ package internal
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"time"
 
 	"cloud.google.com/go/storage"
@@ -165,7 +166,7 @@ func isIgnorableGcsError(err error) bool {
 		return false
 	}
 	// We can ignore 404 (the log file isn't ready yet) and 416 (no new contents)
-	if apiError.Code == 404 || apiError.Code == 416 {
+	if apiError.Code == http.StatusNotFound || apiError.Code == http.StatusRequestedRangeNotSatisfiable {
 		return true
 	}
 	return false
@@ -188,7 +189,8 @@ func isRetryableError(err error) bool {
 
 	var apiError *googleapi.Error
 	if xerrors.As(err, &apiError) {
-		return apiError.Code >= 500
+		// Retry for 429 (Too Many Requests) and server side errors.
+		return apiError.Code >= http.StatusTooManyRequests || apiError.Code >= 500
 	}
 
 	// Unknown errors are retryable

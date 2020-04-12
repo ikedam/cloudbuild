@@ -11,7 +11,7 @@
 
 # Configurations available only in this file
 
-# pollingIntervalMsec: 500
+# pollingIntervalMsec: 1000
 # uploadTimeoutMsec: 300000
 # maxUploadTryCount: 5
 # cloudBuildTimeoutMsec: 10000

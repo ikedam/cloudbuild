@@ -98,7 +98,7 @@ func init() {
 	// for compatibility with `gcloud builds submit`
 	rootCmd.Flags().String("substitutions", "", "comma-separated key=value expressions to replace keywords in cloudbuild.yaml.")
 
-	viper.SetDefault("pollingIntervalMsec", 500)
+	viper.SetDefault("pollingIntervalMsec", 1000)
 	viper.SetDefault("uploadTimeoutMsec", 5*60*1000)
 	viper.SetDefault("maxUploadTryCount", 5)
 	viper.SetDefault("cloudBuildTimeoutMsec", 10*1000)
