@@ -190,7 +190,7 @@ func isRetryableError(err error) bool {
 	var apiError *googleapi.Error
 	if xerrors.As(err, &apiError) {
 		// Retry for 429 (Too Many Requests) and server side errors.
-		return apiError.Code >= http.StatusTooManyRequests || apiError.Code >= 500
+		return apiError.Code == http.StatusTooManyRequests || apiError.Code >= 500
 	}
 
 	// Unknown errors are retryable
