@@ -87,6 +87,7 @@ func ApplyMatcherTo(field string, m gomock.Matcher) gomock.Matcher {
 	}
 }
 
+// AssertErrorIs assert that an error is a specified type.
 func AssertErrorIs(t *testing.T, expected, actual error) bool {
 	if expected == nil {
 		return assert.Nil(t, actual)

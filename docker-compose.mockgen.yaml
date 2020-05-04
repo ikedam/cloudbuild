@@ -29,3 +29,8 @@ services:
           -destination=testutil/cloudbuild_rest_mockgen.go \
           github.com/ikedam/cloudbuild/testutil \
           CloudBuildRESTServer
+        mockgen \
+          -package=testutil \
+          -destination=testutil/storage_json_mockgen.go \
+          github.com/ikedam/cloudbuild/testutil \
+          CloudStorageJSONServer

@@ -14,8 +14,9 @@ require (
 	github.com/Microsoft/hcsshim v0.8.7 // indirect
 	github.com/docker/docker v0.0.0-00010101000000-000000000000
 	github.com/golang/mock v1.4.0
-	github.com/golang/protobuf v1.3.2
+	github.com/golang/protobuf v1.3.3
 	github.com/googleapis/gax-go v2.0.2+incompatible // indirect
+	github.com/gorilla/mux v1.7.4
 	github.com/labstack/echo v3.3.10+incompatible
 	github.com/labstack/gommon v0.3.0 // indirect
 	github.com/mitchellh/go-homedir v1.1.0
@@ -29,8 +30,9 @@ require (
 	golang.org/x/sys v0.0.0-20191228213918-04cbcbbfeed8 // indirect
 	golang.org/x/xerrors v0.0.0-20191204190536-9bdfabe68543
 	google.golang.org/api v0.15.0
-	google.golang.org/genproto v0.0.0-20200117163144-32f20d992d24
-	google.golang.org/grpc v1.21.1
+	google.golang.org/genproto v0.0.0-20200430143042-b979b6f78d84
+	google.golang.org/grpc v1.27.0
+	gopkg.in/square/go-jose.v2 v2.5.1
 	gopkg.in/yaml.v3 v3.0.0-20191120175047-4206685974f2
 	rsc.io/sampler v1.99.99 // indirect
 )

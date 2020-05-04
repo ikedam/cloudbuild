@@ -3,17 +3,24 @@ package internal
 import (
 	"context"
 	"fmt"
+	"io"
+	"io/ioutil"
+	"net/http"
+	"strings"
 	"testing"
 	"time"
 
+	"cloud.google.com/go/storage"
 	"github.com/golang/mock/gomock"
 	"github.com/ikedam/cloudbuild/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/xerrors"
 
 	cloudbuild "google.golang.org/api/cloudbuild/v1"
 	"google.golang.org/api/googleapi"
 	"google.golang.org/api/option"
+	storage_v1 "google.golang.org/api/storage/v1"
 )
 
 func TestRunCloudBuildParameters(t *testing.T) {
@@ -153,4 +160,52 @@ func TestRunCloudBuildTimeout(t *testing.T) {
 			testutil.AssertErrorIs(t, testcase.expectErr, err)
 		})
 	}
+}
+
+func TestUploadCloudStorage(t *testing.T) {
+	mockServer := testutil.SetupMockCloudStorageJSONServer(t)
+	if mockServer == nil {
+		t.Skip()
+	}
+	defer mockServer.Close()
+
+	gcsClient, err := storage.NewClient(
+		context.Background(),
+		option.WithEndpoint(fmt.Sprintf("http://%v/", mockServer.Addr().String())),
+		option.WithoutAuthentication(),
+	)
+	require.NoError(t, err)
+
+	s := &CloudBuildSubmit{
+		sourcePath: &GcsPath{
+			Bucket: "test",
+			Object: "path/to/source.tgz",
+		},
+		gcsClient: gcsClient,
+	}
+
+	insert := func(bucket string, metadata map[string]interface{}, contentReader io.ReadCloser, r *http.Request) (*storage_v1.Object, error) {
+		assert.Equal(mockServer.Ctrl.T, "path/to/source.tgz", metadata["name"])
+
+		defer contentReader.Close()
+		body, err := ioutil.ReadAll(contentReader)
+		if err != nil {
+			return nil, xerrors.Errorf("Failed to read body: %+v", err)
+		}
+		assert.Equal(mockServer.Ctrl.T, []byte("test"), body)
+		return &storage_v1.Object{}, nil
+	}
+	mockServer.Mock.EXPECT().
+		Insert(
+			gomock.Eq("test"),
+			gomock.Any(),
+			gomock.Any(),
+			gomock.Any(),
+		).DoAndReturn(insert).
+		Times(1)
+
+	reader := strings.NewReader("test")
+	err = s.uploadCloudStorage(reader)
+
+	assert.NoError(t, err)
 }

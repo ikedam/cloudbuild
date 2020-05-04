@@ -31,6 +31,7 @@ type CloudBuildSubmit struct {
 	Config
 	sourcePath     *GcsPath
 	cbService      *cloudbuild.Service
+	gcsClient      *storage.Client
 	buildID        string
 	completeStatus string
 }
@@ -46,6 +47,19 @@ func (s *CloudBuildSubmit) getCloudBuildService() (*cloudbuild.Service, error) {
 	}
 	s.cbService = service
 	return service, nil
+}
+
+func (s *CloudBuildSubmit) getCloudStorageClient() (*storage.Client, error) {
+	if s.gcsClient != nil {
+		return s.gcsClient, nil
+	}
+	ctx := context.Background()
+	client, err := storage.NewClient(ctx)
+	if err != nil {
+		return nil, xerrors.Errorf("Failed to create cloud storage client: %w", err)
+	}
+	s.gcsClient = client
+	return client, nil
 }
 
 // Execute performs the sequence to submit a build to CloudBuild
@@ -229,7 +243,7 @@ func (s *CloudBuildSubmit) uploadCloudStorage(stream io.Reader) error {
 		ctx = timeoutCtx
 		defer cancel()
 	}
-	client, err := storage.NewClient(ctx)
+	client, err := s.getCloudStorageClient()
 	if err != nil {
 		return xerrors.Errorf("Failed to initialize gcs client: %w", err)
 	}
@@ -339,7 +353,7 @@ func (s *CloudBuildSubmit) watchCloudBuild(buildID string) (string, error) {
 		WithField("gcsObject", objectPath).
 		Trace("Stat log")
 
-	gcsClient, err := storage.NewClient(ctx)
+	gcsClient, err := s.getCloudStorageClient()
 	if err != nil {
 		return "", NewServiceError("Failed to initialize gcs client", err)
 	}
