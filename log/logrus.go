@@ -17,22 +17,22 @@ func init() {
 
 // Debug outputs debug logs.
 func Debug(args ...interface{}) {
-	Logger.Debug(args)
+	Logger.Debug(args...)
 }
 
 // Debugf outputs debug logs.
 func Debugf(format string, args ...interface{}) {
-	Logger.Debugf(format, args)
+	Logger.Debugf(format, args...)
 }
 
 // Error outputs debug logs.
 func Error(args ...interface{}) {
-	Logger.Error(args)
+	Logger.Error(args...)
 }
 
 // Errorf outputs error logs.
 func Errorf(format string, args ...interface{}) {
-	Logger.Errorf(format, args)
+	Logger.Errorf(format, args...)
 }
 
 // Exit runs exit hook handlers of logrus and exit the program.
@@ -42,32 +42,32 @@ func Exit(code int) {
 
 // Info output information logs.
 func Info(args ...interface{}) {
-	Logger.Info(args)
+	Logger.Info(args...)
 }
 
 // Infof outputs information logs.
 func Infof(format string, args ...interface{}) {
-	Logger.Infof(format, args)
+	Logger.Infof(format, args...)
 }
 
 // Trace output trace logs.
 func Trace(args ...interface{}) {
-	Logger.Trace(args)
+	Logger.Trace(args...)
 }
 
 // Tracef outputs trace logs.
 func Tracef(format string, args ...interface{}) {
-	Logger.Tracef(format, args)
+	Logger.Tracef(format, args...)
 }
 
 // Warning outputs warning logs.
 func Warning(args ...interface{}) {
-	Logger.Warning(args)
+	Logger.Warning(args...)
 }
 
 // Warningf outputs warning logs.
 func Warningf(format string, args ...interface{}) {
-	Logger.Warningf(format, args)
+	Logger.Warningf(format, args...)
 }
 
 // WithError parepares log outputs with the specified error.
