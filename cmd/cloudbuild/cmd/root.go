@@ -22,11 +22,10 @@ var rootCmd = &cobra.Command{
 	Args:  cobra.ExactValidArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
 		initLevel()
+		submit := &internal.CloudBuildSubmit{}
 		signal.WithSignalStacktrace(
 			viper.GetBool("alwaysDump"),
 			func() {
-				submit := &internal.CloudBuildSubmit{}
-
 				if err := func() error {
 					if err := viper.Unmarshal(&submit.Config); err != nil {
 						return internal.NewConfigError("Failed to parse configurations", err)
@@ -51,11 +50,19 @@ var rootCmd = &cobra.Command{
 				}(); err != nil {
 					var buildResultError *internal.BuildResultError
 					if xerrors.As(err, &buildResultError) {
-						log.Errorf("Build failed with %+v", buildResultError.Status)
+						log.WithError(err).
+							WithField("buildID", buildResultError.BuildID).
+							WithField("status", buildResultError.Status).
+							Error("Build failed")
 					} else {
 						log.WithError(err).Error("Failed to run a build")
 					}
 					log.Exit(internal.ExitCodeForError(err))
+				}
+			},
+			func(s os.Signal) {
+				if err := submit.Cancel(); err != nil {
+					log.WithError(err).Error("Failed to cancel build.")
 				}
 			},
 		)
@@ -66,7 +73,7 @@ var rootCmd = &cobra.Command{
 // This is called by main.main(). It only needs to happen once to the rootCmd.
 func Execute() {
 	if err := rootCmd.Execute(); err != nil {
-		log.WithError(err).Errorf("Failed to launch the command")
+		log.WithError(err).Error("Failed to launch the command")
 		log.Exit(internal.ExitCodeConfigurationError)
 	}
 }

@@ -18,6 +18,7 @@ import (
 	"golang.org/x/xerrors"
 
 	cloudbuild "google.golang.org/api/cloudbuild/v1"
+	"google.golang.org/api/googleapi"
 
 	"github.com/docker/docker/builder/dockerignore"
 	"github.com/docker/docker/pkg/archive"
@@ -28,7 +29,9 @@ import (
 // CloudBuildSubmit holds running state of build submission
 type CloudBuildSubmit struct {
 	Config
-	sourcePath *GcsPath
+	sourcePath     *GcsPath
+	buildID        string
+	completeStatus string
 }
 
 // Execute performs the sequence to submit a build to CloudBuild
@@ -86,9 +89,8 @@ func (s *CloudBuildSubmit) Execute() error {
 		break
 	}
 
-	var buildID string
 	for backoff := NewBackoff(); true; {
-		buildID, err = s.runCloudBuild(build)
+		err = s.runCloudBuild(build)
 		if err != nil {
 			if (s.Config.MaxStartBuildTryCount <= 0 || backoff.Attempt() < s.Config.MaxStartBuildTryCount) &&
 				isRetryableError(err) {
@@ -105,12 +107,12 @@ func (s *CloudBuildSubmit) Execute() error {
 		break
 	}
 
-	status, err := s.watchCloudBuild(buildID)
+	status, err := s.watchCloudBuild(s.buildID)
 	if err != nil {
 		return err
 	}
 	if status != "SUCCESS" {
-		return NewBuildResultError(buildID, status)
+		return NewBuildResultError(s.buildID, status)
 	}
 
 	return nil
@@ -228,7 +230,7 @@ func (s *CloudBuildSubmit) uploadCloudStorage(stream io.Reader) error {
 	return nil
 }
 
-func (s *CloudBuildSubmit) runCloudBuild(build *cloudbuild.Build) (string, error) {
+func (s *CloudBuildSubmit) runCloudBuild(build *cloudbuild.Build) error {
 	log.WithField("source", s.sourcePath).Info("Queueing build")
 	bucketName := s.sourcePath.Bucket
 	objectPath := s.sourcePath.Object
@@ -243,7 +245,7 @@ func (s *CloudBuildSubmit) runCloudBuild(build *cloudbuild.Build) (string, error
 	ctx := context.Background()
 	service, err := cloudbuild.NewService(ctx)
 	if err != nil {
-		return "", xerrors.Errorf("Failed to create coudbuild service: %w", err)
+		return xerrors.Errorf("Failed to create coudbuild service: %w", err)
 	}
 	buildService := cloudbuild.NewProjectsBuildsService(service)
 	call := buildService.Create(s.Config.Project, build)
@@ -258,16 +260,17 @@ func (s *CloudBuildSubmit) runCloudBuild(build *cloudbuild.Build) (string, error
 	}
 	operation, err := call.Context(createCtx).Do()
 	if err != nil {
-		return "", xerrors.Errorf("Failed to queue build: %w", err)
+		return xerrors.Errorf("Failed to queue build: %w", err)
 	}
 
 	metadata := &cloudbuild.BuildOperationMetadata{}
 	if err := json.Unmarshal(operation.Metadata, &metadata); err != nil {
-		return "", xerrors.Errorf("Failed to parse result(%s): %w", string(operation.Metadata), err)
+		return xerrors.Errorf("Failed to parse result(%s): %w", string(operation.Metadata), err)
 	}
+	s.buildID = metadata.Build.Id
 	log.WithField("build", metadata).Trace("Build metadata")
-	log.WithField("buildID", metadata.Build.Id).Info("Build queued")
-	return metadata.Build.Id, nil
+	log.WithField("buildID", s.buildID).Info("Build queued")
+	return nil
 }
 
 func (s *CloudBuildSubmit) watchCloudBuild(buildID string) (string, error) {
@@ -353,6 +356,7 @@ func (s *CloudBuildSubmit) watchCloudBuild(buildID string) (string, error) {
 		time.Sleep(time.Duration(s.Config.PollingIntervalMsec) * time.Millisecond)
 	}
 	build = w.build
+	s.completeStatus = build.Status
 	log.WithField("build", build).
 		WithField("gcsBucket", logURL.Bucket).
 		WithField("gcsObject", logURL.Object).
@@ -361,7 +365,7 @@ func (s *CloudBuildSubmit) watchCloudBuild(buildID string) (string, error) {
 	log.WithField("buildID", build.Id).
 		WithField("status", build.Status).
 		Info("Build completed")
-	return build.Status, nil
+	return s.completeStatus, nil
 }
 
 type watchLogStatus struct {
@@ -485,4 +489,57 @@ func isBuildCompleted(status string) bool {
 		status == "INTERNAL_ERROR" ||
 		status == "TIMEOUT" ||
 		status == "CANCELLED"
+}
+
+// Cancel cancels running build
+func (s *CloudBuildSubmit) Cancel() error {
+	if s.buildID == "" {
+		log.Debug("No need to cancel build as it's not started yet.")
+		return nil
+	}
+	if s.completeStatus != "" {
+		log.WithField("buildID", s.buildID).
+			WithField("status", s.completeStatus).
+			Debug("No need to cancel build as build has already completed.")
+		return nil
+	}
+	log.WithField("buildID", s.buildID).
+		Info("Canceling build...")
+
+	ctx := context.Background()
+	service, err := cloudbuild.NewService(ctx)
+	if err != nil {
+		return xerrors.Errorf("Failed to create coudbuild service: %w", err)
+	}
+	cancel := &cloudbuild.CancelBuildRequest{}
+	buildService := cloudbuild.NewProjectsBuildsService(service)
+	call := buildService.Cancel(s.Project, s.buildID, cancel)
+	createCtx := ctx
+	if s.Config.CloudBuildTimeoutMsec > 0 {
+		timeoutCtx, cancel := context.WithTimeout(
+			createCtx,
+			time.Duration(s.Config.CloudBuildTimeoutMsec)*time.Millisecond,
+		)
+		createCtx = timeoutCtx
+		defer cancel()
+	}
+	for backoff := NewBackoff(); true; {
+		if _, err := call.Context(createCtx).Do(); err != nil {
+			if googleapi.IsNotModified(err) {
+				break
+			}
+			if (s.Config.MaxStartBuildTryCount <= 0 || backoff.Attempt() < s.Config.MaxStartBuildTryCount) &&
+				isRetryableError(err) {
+				log.WithError(err).WithField("attempt", backoff.Attempt()).
+					Warning("Failed to cancel build. Retrying...")
+				backoff.Sleep()
+				continue
+			}
+			return xerrors.Errorf("Failed to cancel build %v: %w", s.buildID, err)
+		}
+		break
+	}
+	log.WithField("buildID", s.buildID).
+		Info("Canceled")
+	return nil
 }
