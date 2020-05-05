@@ -37,6 +37,7 @@ func SetupMockCloudBuildRESTServer(t *testing.T) *MockCloudBuildRESTServerSetup 
 	ctrl := gomock.NewController(t)
 	mock := NewMockCloudBuildRESTServer(ctrl)
 
+	// var s *CloudBuildRESTServerRun
 	s, err := NewCloudBuildRESTServer(mock)
 	if err != nil {
 		ctrl.Finish()

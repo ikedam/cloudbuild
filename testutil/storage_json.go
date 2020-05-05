@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
-	"log"
 	"mime"
 	"mime/multipart"
 	"net"
@@ -13,6 +12,7 @@ import (
 
 	"github.com/gorilla/mux"
 	"github.com/labstack/echo"
+	"github.com/sirupsen/logrus"
 	storage_v1 "google.golang.org/api/storage/v1"
 )
 
@@ -27,6 +27,7 @@ type CloudStorageJSONServer interface {
 type CloudStorageJSONServerRun struct {
 	server *http.Server
 	addr   net.Addr
+	log    *logrus.Logger
 }
 
 // Addr returns bound address
@@ -39,12 +40,20 @@ func (r *CloudStorageJSONServerRun) Close() error {
 	return r.server.Close()
 }
 
+// SetLogLevel sets the log level
+func (r *CloudStorageJSONServerRun) SetLogLevel(level logrus.Level) {
+	r.log.SetLevel(level)
+}
+
 // NewCloudStorageJSONServer starts a server for cloud storage JSON api.
 func NewCloudStorageJSONServer(s CloudStorageJSONServer) (*CloudStorageJSONServerRun, error) {
 	l, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		return nil, err
 	}
+
+	log := logrus.New()
+	log.Level = DefaultLogLevel
 
 	// Some handlers require stream handlings,
 	// so handle with raw net/http and partially pass to echo.
@@ -60,8 +69,8 @@ func NewCloudStorageJSONServer(s CloudStorageJSONServer) (*CloudStorageJSONServe
 			// especially, resumable is not supported
 			// https://cloud.google.com/storage/docs/resumable-uploads
 			w.WriteHeader(http.StatusInternalServerError)
-			log.Printf(
-				"ERROR: Unexpected uploadType '%v': only multipart is supported."+
+			log.Errorf(
+				"Unexpected uploadType '%v': only multipart is supported."+
 					" Don't send too large contents in tests",
 				r.URL.Query().Get("uploadType"),
 			)
@@ -72,12 +81,12 @@ func NewCloudStorageJSONServer(s CloudStorageJSONServer) (*CloudStorageJSONServe
 		mediaType, params, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
 		if err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
-			log.Printf("ERROR: Unexpected error for pasring Content-Type: %+v", err)
+			log.WithError(err).Errorf("Unexpected error for pasring Content-Type: %v", r.Header.Get("Content-Type"))
 			return
 		}
 		if "multipart/related" != mediaType {
 			w.WriteHeader(http.StatusInternalServerError)
-			log.Printf("ERROR: Unexpected Content-Type: %v", mediaType)
+			log.Errorf("Unexpected Content-Type: %v", mediaType)
 			return
 		}
 		defer r.Body.Close()
@@ -85,28 +94,27 @@ func NewCloudStorageJSONServer(s CloudStorageJSONServer) (*CloudStorageJSONServe
 		metadataReader, err := mr.NextPart()
 		if err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
-			log.Printf("ERROR: Unexpected error for pasring first part: %+v", err)
+			log.WithError(err).Error("Unexpected error for pasring first part")
 			return
 		}
 		defer metadataReader.Close()
 		metadataJSON, err := ioutil.ReadAll(metadataReader)
 		if err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
-			log.Printf("ERROR: Failed to read metadata: %+v", err)
+			log.WithError(err).Error("Failed to read metadata")
 			return
 		}
 		var metadata map[string]interface{}
 		if err = json.Unmarshal(metadataJSON, &metadata); err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
-			log.Printf("ERROR: Failed to parse metadata: %+v", err)
-			log.Printf("%s", metadataJSON)
+			log.WithError(err).WithField("metadata", metadataJSON).Error("Failed to parse metadata")
 			return
 		}
 
 		contentReader, err := mr.NextPart()
 		if err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
-			log.Printf("ERROR: Unexpected error for reading second part: %+v", err)
+			log.WithError(err).Error("Unexpected error for reading second part")
 			return
 		}
 
@@ -118,13 +126,13 @@ func NewCloudStorageJSONServer(s CloudStorageJSONServer) (*CloudStorageJSONServe
 				return
 			}
 			w.WriteHeader(http.StatusInternalServerError)
-			log.Printf("ERROR: Error in the handler: %+v", err)
+			log.WithError(err).Error("Error in the handler")
 			return
 		}
 		body, err := json.Marshal(bucket)
 		if err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
-			log.Printf("ERROR: Error marshaling response: %+v", err)
+			log.WithError(err).Errorf("Error marshaling response")
 			return
 		}
 		w.Write(body)
@@ -139,10 +147,10 @@ func NewCloudStorageJSONServer(s CloudStorageJSONServer) (*CloudStorageJSONServe
 
 	logMux := http.NewServeMux()
 	logMux.HandleFunc("/", func(rsp http.ResponseWriter, req *http.Request) {
-		log.Printf("%+v %+v", req.Method, req.URL)
+		log.Debugf("%+v %+v", req.Method, req.URL)
 		rspWrapper := NewResponseSniffer(rsp)
 		r.ServeHTTP(rspWrapper, req)
-		log.Printf("%+v %+v %+v size=%v", rspWrapper.Code(), req.Method, req.URL, rspWrapper.BodySize())
+		log.Infof("%+v %+v %+v size=%v", rspWrapper.Code(), req.Method, req.URL, rspWrapper.BodySize())
 	})
 	server := &http.Server{
 		Handler: logMux,

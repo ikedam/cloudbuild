@@ -48,3 +48,18 @@ func (mr *MockCloudBuildRESTServerMockRecorder) CreateBuild(arg0, arg1, arg2 int
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CreateBuild", reflect.TypeOf((*MockCloudBuildRESTServer)(nil).CreateBuild), arg0, arg1, arg2)
 }
+
+// GetBuild mocks base method
+func (m *MockCloudBuildRESTServer) GetBuild(arg0 echo.Context, arg1, arg2 string) (*v1.Build, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetBuild", arg0, arg1, arg2)
+	ret0, _ := ret[0].(*v1.Build)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetBuild indicates an expected call of GetBuild
+func (mr *MockCloudBuildRESTServerMockRecorder) GetBuild(arg0, arg1, arg2 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetBuild", reflect.TypeOf((*MockCloudBuildRESTServer)(nil).GetBuild), arg0, arg1, arg2)
+}

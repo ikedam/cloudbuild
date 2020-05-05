@@ -170,10 +170,19 @@ func TestUploadCloudStorage(t *testing.T) {
 	}
 	defer mockServer.Close()
 
-	gcsClient, err := storage.NewClient(
-		context.Background(),
-		option.WithEndpoint(fmt.Sprintf("http://%v/", mockServer.Addr().String())),
-		option.WithoutAuthentication(),
+	var gcsClient *storage.Client
+	var err error
+	testutil.MockEnvironment(
+		t,
+		"STORAGE_EMULATOR_HOST",
+		mockServer.Addr().String(),
+		func() {
+			gcsClient, err = storage.NewClient(
+				context.Background(),
+				option.WithEndpoint(fmt.Sprintf("http://%v/", mockServer.Addr().String())),
+				option.WithoutAuthentication(),
+			)
+		},
 	)
 	require.NoError(t, err)
 
@@ -214,4 +223,74 @@ func TestUploadCloudStorage(t *testing.T) {
 	err = s.uploadCloudStorage(reader)
 
 	assert.NoError(t, err)
+}
+
+func TestWatchLog(t *testing.T) {
+	mockGcbServer := testutil.SetupMockCloudBuildRESTServer(t)
+	if mockGcbServer == nil {
+		t.Skip()
+	}
+	defer mockGcbServer.Close()
+
+	cbService, err := cloudbuild.NewService(
+		context.Background(),
+		option.WithEndpoint(fmt.Sprintf("http://%v/", mockGcbServer.Addr().String())),
+		option.WithoutAuthentication(),
+	)
+	require.NoError(t, err)
+
+	mockGcsServer := testutil.SetupMockCloudStorageJSONServer(t)
+	if mockGcsServer == nil {
+		t.Skip()
+	}
+	defer mockGcsServer.Close()
+
+	var gcsClient *storage.Client
+	testutil.MockEnvironment(
+		t,
+		"STORAGE_EMULATOR_HOST",
+		mockGcsServer.Addr().String(),
+		func() {
+			gcsClient, err = storage.NewClient(
+				context.Background(),
+				option.WithEndpoint(fmt.Sprintf("http://%v/", mockGcsServer.Addr().String())),
+				option.WithoutAuthentication(),
+			)
+		},
+	)
+	require.NoError(t, err)
+
+	mockGcbServer.Mock.EXPECT().
+		GetBuild(
+			// context
+			gomock.Any(),
+			// projectID
+			gomock.Eq("testProject"),
+			// buildID
+			gomock.Eq("test-build-id"),
+		).
+		Return(
+			&cloudbuild.Build{
+				Status: "WORKING",
+			},
+			nil,
+		).
+		Times(1)
+
+	buildService := cloudbuild.NewProjectsBuildsService(cbService)
+	call := buildService.Get("testProject", "test-build-id")
+	logObject := gcsClient.Bucket("logbucket").Object("log-test-build-id.txt")
+	w := &watchLogStatus{
+		config:       &Config{},
+		ctx:          context.Background(),
+		build:        &cloudbuild.Build{},
+		getBuildCall: call,
+		cbAttempt:    0,
+		logObject:    logObject,
+		gcsAttempt:   0,
+		offset:       0,
+		started:      false,
+		complete:     false,
+	}
+	assert.NoError(t, w.watchLog())
 }

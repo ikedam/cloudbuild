@@ -4,14 +4,21 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
 	"reflect"
 	"strings"
 	"testing"
 
 	"github.com/golang/mock/gomock"
 	"github.com/ikedam/cloudbuild/log"
+	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
 	"golang.org/x/xerrors"
+)
+
+var (
+	// DefaultLogLevel is the initial log level for mocks.
+	DefaultLogLevel = logrus.WarnLevel
 )
 
 // MarshalWithTypeURL marshals an object with "@type" field.
@@ -142,6 +149,9 @@ func (s *ResponseSniffer) Header() http.Header {
 
 // Write writes response body.
 func (s *ResponseSniffer) Write(body []byte) (int, error) {
+	if s.code == 0 {
+		s.code = http.StatusOK
+	}
 	s.bodySize += len(body)
 	return s.writer.Write(body)
 }
@@ -150,4 +160,18 @@ func (s *ResponseSniffer) Write(body []byte) (int, error) {
 func (s *ResponseSniffer) WriteHeader(statusCode int) {
 	s.code = statusCode
 	s.writer.WriteHeader(statusCode)
+}
+
+// MockEnvironment mocks an environment variable.
+func MockEnvironment(t *testing.T, name, value string, f func()) {
+	origValue, exists := os.LookupEnv(name)
+	defer func() {
+		if exists {
+			assert.NoError(t, os.Setenv(name, origValue))
+		} else {
+			os.Unsetenv(name)
+		}
+	}()
+	assert.NoError(t, os.Setenv(name, value))
+	f()
 }
