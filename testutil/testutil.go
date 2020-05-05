@@ -3,6 +3,7 @@ package testutil
 import (
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"reflect"
 	"strings"
 	"testing"
@@ -108,4 +109,45 @@ func AssertErrorIs(t *testing.T, expected, actual error) bool {
 		)
 	}
 	return true
+}
+
+// ResponseSniffer wraps http.ResponseWriter
+type ResponseSniffer struct {
+	writer   http.ResponseWriter
+	code     int
+	bodySize int
+}
+
+// NewResponseSniffer creates a new ResponseSniffer
+func NewResponseSniffer(writer http.ResponseWriter) *ResponseSniffer {
+	return &ResponseSniffer{
+		writer: writer,
+	}
+}
+
+// Code returns status code
+func (s *ResponseSniffer) Code() int {
+	return s.code
+}
+
+// BodySize returns response body size
+func (s *ResponseSniffer) BodySize() int {
+	return s.bodySize
+}
+
+// Header returns Header object to write headers to.
+func (s *ResponseSniffer) Header() http.Header {
+	return s.writer.Header()
+}
+
+// Write writes response body.
+func (s *ResponseSniffer) Write(body []byte) (int, error) {
+	s.bodySize += len(body)
+	return s.writer.Write(body)
+}
+
+// WriteHeader writes status code.
+func (s *ResponseSniffer) WriteHeader(statusCode int) {
+	s.code = statusCode
+	s.writer.WriteHeader(statusCode)
 }

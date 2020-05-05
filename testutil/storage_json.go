@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"log"
 	"mime"
 	"mime/multipart"
 	"net"
@@ -19,7 +20,7 @@ import (
 // https://cloud.google.com/storage/docs/json_api
 type CloudStorageJSONServer interface {
 	// https://cloud.google.com/storage/docs/json_api/v1/objects/insert
-	Insert(string, map[string]interface{}, io.ReadCloser, *http.Request) (*storage_v1.Object, error)
+	InsertWithMetadata(string, map[string]interface{}, io.ReadCloser, *http.Request) (*storage_v1.Object, error)
 }
 
 // CloudStorageJSONServerRun holds information for running CloudStorageJSONServer
@@ -55,8 +56,15 @@ func NewCloudStorageJSONServer(s CloudStorageJSONServer) (*CloudStorageJSONServe
 		vars := mux.Vars(r)
 
 		if "multipart" != r.URL.Query().Get("uploadType") {
+			// only supports multipart.
+			// especially, resumable is not supported
+			// https://cloud.google.com/storage/docs/resumable-uploads
 			w.WriteHeader(http.StatusInternalServerError)
-			w.Write([]byte(fmt.Sprintf("Unexpected uploadType: %v", r.URL.Query().Get("uploadType"))))
+			log.Printf(
+				"ERROR: Unexpected uploadType '%v': only multipart is supported."+
+					" Don't send too large contents in tests",
+				r.URL.Query().Get("uploadType"),
+			)
 			return
 		}
 
@@ -64,12 +72,12 @@ func NewCloudStorageJSONServer(s CloudStorageJSONServer) (*CloudStorageJSONServe
 		mediaType, params, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
 		if err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
-			w.Write([]byte(fmt.Sprintf("Unexpected error for pasring Content-Type: %+v", err)))
+			log.Printf("ERROR: Unexpected error for pasring Content-Type: %+v", err)
 			return
 		}
 		if "multipart/related" != mediaType {
 			w.WriteHeader(http.StatusInternalServerError)
-			w.Write([]byte(fmt.Sprintf("Unexpected Content-Type: %v", mediaType)))
+			log.Printf("ERROR: Unexpected Content-Type: %v", mediaType)
 			return
 		}
 		defer r.Body.Close()
@@ -77,29 +85,32 @@ func NewCloudStorageJSONServer(s CloudStorageJSONServer) (*CloudStorageJSONServe
 		metadataReader, err := mr.NextPart()
 		if err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
-			w.Write([]byte(fmt.Sprintf("Unexpected error for pasring first part: %+v", err)))
+			log.Printf("ERROR: Unexpected error for pasring first part: %+v", err)
 			return
 		}
 		defer metadataReader.Close()
 		metadataJSON, err := ioutil.ReadAll(metadataReader)
 		if err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
-			w.Write([]byte(fmt.Sprintf("Failed to parse metadata: %+v", err)))
+			log.Printf("ERROR: Failed to read metadata: %+v", err)
 			return
 		}
 		var metadata map[string]interface{}
 		if err = json.Unmarshal(metadataJSON, &metadata); err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
-			w.Write([]byte(fmt.Sprintf("Failed to parse metadata: %+v", err)))
+			log.Printf("ERROR: Failed to parse metadata: %+v", err)
+			log.Printf("%s", metadataJSON)
+			return
 		}
 
 		contentReader, err := mr.NextPart()
 		if err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
-			w.Write([]byte(fmt.Sprintf("Unexpected error for pasring second part: %+v", err)))
+			log.Printf("ERROR: Unexpected error for reading second part: %+v", err)
+			return
 		}
 
-		bucket, err := s.Insert(vars["bucket"], metadata, contentReader, r)
+		bucket, err := s.InsertWithMetadata(vars["bucket"], metadata, contentReader, r)
 		if err != nil {
 			if httpError, ok := err.(*echo.HTTPError); ok {
 				w.WriteHeader(httpError.Code)
@@ -107,13 +118,13 @@ func NewCloudStorageJSONServer(s CloudStorageJSONServer) (*CloudStorageJSONServe
 				return
 			}
 			w.WriteHeader(http.StatusInternalServerError)
-			w.Write([]byte(fmt.Sprintf("%+v", err)))
+			log.Printf("ERROR: Error in the handler: %+v", err)
 			return
 		}
 		body, err := json.Marshal(bucket)
 		if err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
-			w.Write([]byte(fmt.Sprintf("%+v", err)))
+			log.Printf("ERROR: Error marshaling response: %+v", err)
 			return
 		}
 		w.Write(body)
@@ -126,8 +137,15 @@ func NewCloudStorageJSONServer(s CloudStorageJSONServer) (*CloudStorageJSONServe
 
 	r.PathPrefix("/").Handler(e.Server.Handler)
 
+	logMux := http.NewServeMux()
+	logMux.HandleFunc("/", func(rsp http.ResponseWriter, req *http.Request) {
+		log.Printf("%+v %+v", req.Method, req.URL)
+		rspWrapper := NewResponseSniffer(rsp)
+		r.ServeHTTP(rspWrapper, req)
+		log.Printf("%+v %+v %+v size=%v", rspWrapper.Code(), req.Method, req.URL, rspWrapper.BodySize())
+	})
 	server := &http.Server{
-		Handler: r,
+		Handler: logMux,
 	}
 	go server.Serve(l)
 	return &CloudStorageJSONServerRun{

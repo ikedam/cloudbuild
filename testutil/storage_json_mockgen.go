@@ -35,17 +35,17 @@ func (m *MockCloudStorageJSONServer) EXPECT() *MockCloudStorageJSONServerMockRec
 	return m.recorder
 }
 
-// Insert mocks base method
-func (m *MockCloudStorageJSONServer) Insert(arg0 string, arg1 map[string]interface{}, arg2 io.ReadCloser, arg3 *http.Request) (*v1.Object, error) {
+// InsertWithMetadata mocks base method
+func (m *MockCloudStorageJSONServer) InsertWithMetadata(arg0 string, arg1 map[string]interface{}, arg2 io.ReadCloser, arg3 *http.Request) (*v1.Object, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Insert", arg0, arg1, arg2, arg3)
+	ret := m.ctrl.Call(m, "InsertWithMetadata", arg0, arg1, arg2, arg3)
 	ret0, _ := ret[0].(*v1.Object)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
-// Insert indicates an expected call of Insert
-func (mr *MockCloudStorageJSONServerMockRecorder) Insert(arg0, arg1, arg2, arg3 interface{}) *gomock.Call {
+// InsertWithMetadata indicates an expected call of InsertWithMetadata
+func (mr *MockCloudStorageJSONServerMockRecorder) InsertWithMetadata(arg0, arg1, arg2, arg3 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Insert", reflect.TypeOf((*MockCloudStorageJSONServer)(nil).Insert), arg0, arg1, arg2, arg3)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "InsertWithMetadata", reflect.TypeOf((*MockCloudStorageJSONServer)(nil).InsertWithMetadata), arg0, arg1, arg2, arg3)
 }

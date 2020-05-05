@@ -1,12 +1,13 @@
 package internal
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
 	"io/ioutil"
+	"math/rand"
 	"net/http"
-	"strings"
 	"testing"
 	"time"
 
@@ -184,6 +185,11 @@ func TestUploadCloudStorage(t *testing.T) {
 		gcsClient: gcsClient,
 	}
 
+	// data larger (or equal to) googleapi.DefaultUploadChunkSize cause resumable uploads
+	// this test doesn't test resumable upload.
+	testdata := make([]byte, googleapi.DefaultUploadChunkSize-1)
+	_, err = rand.Read(testdata)
+	assert.NoError(t, err)
 	insert := func(bucket string, metadata map[string]interface{}, contentReader io.ReadCloser, r *http.Request) (*storage_v1.Object, error) {
 		assert.Equal(mockServer.Ctrl.T, "path/to/source.tgz", metadata["name"])
 
@@ -192,11 +198,11 @@ func TestUploadCloudStorage(t *testing.T) {
 		if err != nil {
 			return nil, xerrors.Errorf("Failed to read body: %+v", err)
 		}
-		assert.Equal(mockServer.Ctrl.T, []byte("test"), body)
+		assert.Equal(mockServer.Ctrl.T, testdata, body)
 		return &storage_v1.Object{}, nil
 	}
 	mockServer.Mock.EXPECT().
-		Insert(
+		InsertWithMetadata(
 			gomock.Eq("test"),
 			gomock.Any(),
 			gomock.Any(),
@@ -204,7 +210,7 @@ func TestUploadCloudStorage(t *testing.T) {
 		).DoAndReturn(insert).
 		Times(1)
 
-	reader := strings.NewReader("test")
+	reader := bytes.NewReader(testdata)
 	err = s.uploadCloudStorage(reader)
 
 	assert.NoError(t, err)
