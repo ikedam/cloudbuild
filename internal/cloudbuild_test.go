@@ -11,7 +11,6 @@ import (
 	"testing"
 	"time"
 
-	"cloud.google.com/go/storage"
 	"github.com/golang/mock/gomock"
 	"github.com/ikedam/cloudbuild/testutil"
 	"github.com/stretchr/testify/assert"
@@ -20,7 +19,6 @@ import (
 
 	cloudbuild "google.golang.org/api/cloudbuild/v1"
 	"google.golang.org/api/googleapi"
-	"google.golang.org/api/option"
 	storage_v1 "google.golang.org/api/storage/v1"
 )
 
@@ -31,11 +29,7 @@ func TestRunCloudBuildParameters(t *testing.T) {
 	}
 	defer mockServer.Close()
 
-	cbService, err := cloudbuild.NewService(
-		context.Background(),
-		option.WithEndpoint(fmt.Sprintf("http://%v/", mockServer.Addr().String())),
-		option.WithoutAuthentication(),
-	)
+	cbService, err := mockServer.NewService(t)
 	require.NoError(t, err)
 
 	s := &CloudBuildSubmit{
@@ -121,11 +115,7 @@ func TestRunCloudBuildTimeout(t *testing.T) {
 			}
 			defer mockServer.Close()
 
-			cbService, err := cloudbuild.NewService(
-				context.Background(),
-				option.WithEndpoint(fmt.Sprintf("http://%v/", mockServer.Addr().String())),
-				option.WithoutAuthentication(),
-			)
+			cbService, err := mockServer.NewService(t)
 			require.NoError(t, err)
 
 			s := &CloudBuildSubmit{
@@ -170,20 +160,7 @@ func TestUploadCloudStorage(t *testing.T) {
 	}
 	defer mockServer.Close()
 
-	var gcsClient *storage.Client
-	var err error
-	testutil.MockEnvironment(
-		t,
-		"STORAGE_EMULATOR_HOST",
-		mockServer.Addr().String(),
-		func() {
-			gcsClient, err = storage.NewClient(
-				context.Background(),
-				option.WithEndpoint(fmt.Sprintf("http://%v/", mockServer.Addr().String())),
-				option.WithoutAuthentication(),
-			)
-		},
-	)
+	gcsClient, err := mockServer.NewClient(t)
 	require.NoError(t, err)
 
 	s := &CloudBuildSubmit{
@@ -232,11 +209,7 @@ func TestWatchLog(t *testing.T) {
 	}
 	defer mockGcbServer.Close()
 
-	cbService, err := cloudbuild.NewService(
-		context.Background(),
-		option.WithEndpoint(fmt.Sprintf("http://%v/", mockGcbServer.Addr().String())),
-		option.WithoutAuthentication(),
-	)
+	cbService, err := mockGcbServer.NewService(t)
 	require.NoError(t, err)
 
 	mockGcsServer := testutil.SetupMockCloudStorageJSONServer(t)
@@ -245,19 +218,7 @@ func TestWatchLog(t *testing.T) {
 	}
 	defer mockGcsServer.Close()
 
-	var gcsClient *storage.Client
-	testutil.MockEnvironment(
-		t,
-		"STORAGE_EMULATOR_HOST",
-		mockGcsServer.Addr().String(),
-		func() {
-			gcsClient, err = storage.NewClient(
-				context.Background(),
-				option.WithEndpoint(fmt.Sprintf("http://%v/", mockGcsServer.Addr().String())),
-				option.WithoutAuthentication(),
-			)
-		},
-	)
+	gcsClient, err := mockGcsServer.NewClient(t)
 	require.NoError(t, err)
 
 	mockGcbServer.Mock.EXPECT().

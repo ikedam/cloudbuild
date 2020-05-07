@@ -1,10 +1,14 @@
 package testutil
 
 import (
+	context "context"
+	"fmt"
 	"net"
 	"testing"
 
+	"cloud.google.com/go/storage"
 	"github.com/golang/mock/gomock"
+	"google.golang.org/api/option"
 )
 
 // MockCloudStorageJSONServerSetup is launched mocked cloud build REST api server
@@ -23,6 +27,25 @@ func (m *MockCloudStorageJSONServerSetup) Addr() net.Addr {
 func (m *MockCloudStorageJSONServerSetup) Close() {
 	m.server.Close()
 	m.Ctrl.Finish()
+}
+
+// NewClient creates a new cloud storage client connecting to this mock.
+func (m *MockCloudStorageJSONServerSetup) NewClient(t *testing.T) (*storage.Client, error) {
+	var gcsClient *storage.Client
+	var err error
+	MockEnvironment(
+		t,
+		"STORAGE_EMULATOR_HOST",
+		m.Addr().String(),
+		func() {
+			gcsClient, err = storage.NewClient(
+				context.Background(),
+				option.WithEndpoint(fmt.Sprintf("http://%v/", m.Addr().String())),
+				option.WithoutAuthentication(),
+			)
+		},
+	)
+	return gcsClient, err
 }
 
 // SetupMockCloudStorageJSONServer starts a JSON api server for mocked cloud storage.

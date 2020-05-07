@@ -1,10 +1,14 @@
 package testutil
 
 import (
+	context "context"
+	"fmt"
 	"net"
 	"testing"
 
 	"github.com/golang/mock/gomock"
+	"google.golang.org/api/cloudbuild/v1"
+	"google.golang.org/api/option"
 )
 
 // MockCloudBuildRESTServerSetup is launched mocked cloud build REST api server
@@ -23,6 +27,15 @@ func (m *MockCloudBuildRESTServerSetup) Addr() net.Addr {
 func (m *MockCloudBuildRESTServerSetup) Close() {
 	m.server.Close()
 	m.ctrl.Finish()
+}
+
+// NewService creates a new cloudbuild service connecting to this mock.
+func (m *MockCloudBuildRESTServerSetup) NewService(t *testing.T) (*cloudbuild.Service, error) {
+	return cloudbuild.NewService(
+		context.Background(),
+		option.WithEndpoint(fmt.Sprintf("http://%v/", m.Addr().String())),
+		option.WithoutAuthentication(),
+	)
 }
 
 // SetupMockCloudBuildRESTServer starts a REST api server for mocked cloud build.
