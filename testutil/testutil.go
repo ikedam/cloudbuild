@@ -175,3 +175,15 @@ func MockEnvironment(t *testing.T, name, value string, f func()) {
 	assert.NoError(t, os.Setenv(name, value))
 	f()
 }
+
+// NewLogMux wraps http.Handler and record logs
+func NewLogMux(m http.Handler, log *logrus.Logger) http.Handler {
+	logMux := http.NewServeMux()
+	logMux.HandleFunc("/", func(rsp http.ResponseWriter, req *http.Request) {
+		log.Debugf("%+v %+v", req.Method, req.URL)
+		rspWrapper := NewResponseSniffer(rsp)
+		m.ServeHTTP(rspWrapper, req)
+		log.Infof("%+v %+v %+v size=%v", rspWrapper.Code(), req.Method, req.URL, rspWrapper.BodySize())
+	})
+	return logMux
+}

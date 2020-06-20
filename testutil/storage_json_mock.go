@@ -3,11 +3,11 @@ package testutil
 import (
 	context "context"
 	"fmt"
-	"net"
 	"testing"
 
 	"cloud.google.com/go/storage"
 	"github.com/golang/mock/gomock"
+	"github.com/sirupsen/logrus"
 	"google.golang.org/api/option"
 )
 
@@ -18,15 +18,15 @@ type MockCloudStorageJSONServerSetup struct {
 	server *CloudStorageJSONServerRun
 }
 
-// Addr returns bound address
-func (m *MockCloudStorageJSONServerSetup) Addr() net.Addr {
-	return m.server.Addr()
-}
-
 // Close stops the mocked server
 func (m *MockCloudStorageJSONServerSetup) Close() {
 	m.server.Close()
 	m.Ctrl.Finish()
+}
+
+// SetLogLevel sets log level for the server
+func (m *MockCloudStorageJSONServerSetup) SetLogLevel(level logrus.Level) {
+	m.server.SetLogLevel(level)
 }
 
 // NewClient creates a new cloud storage client connecting to this mock.
@@ -36,11 +36,11 @@ func (m *MockCloudStorageJSONServerSetup) NewClient(t *testing.T) (*storage.Clie
 	MockEnvironment(
 		t,
 		"STORAGE_EMULATOR_HOST",
-		m.Addr().String(),
+		m.server.objectAddr.String(),
 		func() {
 			gcsClient, err = storage.NewClient(
 				context.Background(),
-				option.WithEndpoint(fmt.Sprintf("http://%v/", m.Addr().String())),
+				option.WithEndpoint(fmt.Sprintf("http://%v/", m.server.apiAddr.String())),
 				option.WithoutAuthentication(),
 			)
 		},

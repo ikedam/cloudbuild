@@ -7,9 +7,9 @@ package testutil
 import (
 	context "context"
 	gomock "github.com/golang/mock/gomock"
-	empty "github.com/golang/protobuf/ptypes/empty"
 	v1 "google.golang.org/genproto/googleapis/devtools/cloudbuild/v1"
 	longrunning "google.golang.org/genproto/googleapis/longrunning"
+	emptypb "google.golang.org/protobuf/types/known/emptypb"
 	reflect "reflect"
 )
 
@@ -97,10 +97,10 @@ func (mr *MockCloudBuildServerMockRecorder) CreateWorkerPool(arg0, arg1 interfac
 }
 
 // DeleteBuildTrigger mocks base method
-func (m *MockCloudBuildServer) DeleteBuildTrigger(arg0 context.Context, arg1 *v1.DeleteBuildTriggerRequest) (*empty.Empty, error) {
+func (m *MockCloudBuildServer) DeleteBuildTrigger(arg0 context.Context, arg1 *v1.DeleteBuildTriggerRequest) (*emptypb.Empty, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "DeleteBuildTrigger", arg0, arg1)
-	ret0, _ := ret[0].(*empty.Empty)
+	ret0, _ := ret[0].(*emptypb.Empty)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
@@ -112,10 +112,10 @@ func (mr *MockCloudBuildServerMockRecorder) DeleteBuildTrigger(arg0, arg1 interf
 }
 
 // DeleteWorkerPool mocks base method
-func (m *MockCloudBuildServer) DeleteWorkerPool(arg0 context.Context, arg1 *v1.DeleteWorkerPoolRequest) (*empty.Empty, error) {
+func (m *MockCloudBuildServer) DeleteWorkerPool(arg0 context.Context, arg1 *v1.DeleteWorkerPoolRequest) (*emptypb.Empty, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "DeleteWorkerPool", arg0, arg1)
-	ret0, _ := ret[0].(*empty.Empty)
+	ret0, _ := ret[0].(*emptypb.Empty)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }

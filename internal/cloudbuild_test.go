@@ -217,6 +217,7 @@ func TestWatchLog(t *testing.T) {
 		t.Skip()
 	}
 	defer mockGcsServer.Close()
+	// mockGcsServer.SetLogLevel(logrus.DebugLevel)
 
 	gcsClient, err := mockGcsServer.NewClient(t)
 	require.NoError(t, err)
@@ -237,6 +238,15 @@ func TestWatchLog(t *testing.T) {
 			nil,
 		).
 		Times(1)
+	mockGcsServer.Mock.EXPECT().GetObject(
+		gomock.Eq("logbucket"),
+		gomock.Eq("log-test-build-id.txt"),
+		gomock.Any(),
+		gomock.Any(),
+	).DoAndReturn(func(_ string, _ string, res http.ResponseWriter, req *http.Request) error {
+		res.Write([]byte("End of Log\n"))
+		return nil
+	})
 
 	buildService := cloudbuild.NewProjectsBuildsService(cbService)
 	call := buildService.Get("testProject", "test-build-id")
@@ -252,6 +262,9 @@ func TestWatchLog(t *testing.T) {
 		offset:       0,
 		started:      false,
 		complete:     false,
+		out:          ioutil.Discard,
 	}
 	assert.NoError(t, w.watchLog())
+	assert.Equal(t, 0, w.cbAttempt)
+	assert.Equal(t, 0, w.gcsAttempt)
 }

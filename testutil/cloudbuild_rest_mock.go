@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/golang/mock/gomock"
+	"github.com/sirupsen/logrus"
 	"google.golang.org/api/cloudbuild/v1"
 	"google.golang.org/api/option"
 )
@@ -27,6 +28,11 @@ func (m *MockCloudBuildRESTServerSetup) Addr() net.Addr {
 func (m *MockCloudBuildRESTServerSetup) Close() {
 	m.server.Close()
 	m.ctrl.Finish()
+}
+
+// SetLogLevel sets log level for the server
+func (m *MockCloudBuildRESTServerSetup) SetLogLevel(level logrus.Level) {
+	m.server.SetLogLevel(level)
 }
 
 // NewService creates a new cloudbuild service connecting to this mock.

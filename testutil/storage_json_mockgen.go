@@ -35,6 +35,20 @@ func (m *MockCloudStorageJSONServer) EXPECT() *MockCloudStorageJSONServerMockRec
 	return m.recorder
 }
 
+// GetObject mocks base method
+func (m *MockCloudStorageJSONServer) GetObject(arg0, arg1 string, arg2 http.ResponseWriter, arg3 *http.Request) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetObject", arg0, arg1, arg2, arg3)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// GetObject indicates an expected call of GetObject
+func (mr *MockCloudStorageJSONServerMockRecorder) GetObject(arg0, arg1, arg2, arg3 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetObject", reflect.TypeOf((*MockCloudStorageJSONServer)(nil).GetObject), arg0, arg1, arg2, arg3)
+}
+
 // InsertWithMetadata mocks base method
 func (m *MockCloudStorageJSONServer) InsertWithMetadata(arg0 string, arg1 map[string]interface{}, arg2 io.ReadCloser, arg3 *http.Request) (*v1.Object, error) {
 	m.ctrl.T.Helper()

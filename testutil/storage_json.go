@@ -21,23 +21,24 @@ import (
 type CloudStorageJSONServer interface {
 	// https://cloud.google.com/storage/docs/json_api/v1/objects/insert
 	InsertWithMetadata(string, map[string]interface{}, io.ReadCloser, *http.Request) (*storage_v1.Object, error)
+	GetObject(string, string, http.ResponseWriter, *http.Request) error
 }
 
 // CloudStorageJSONServerRun holds information for running CloudStorageJSONServer
 type CloudStorageJSONServerRun struct {
-	server *http.Server
-	addr   net.Addr
-	log    *logrus.Logger
-}
-
-// Addr returns bound address
-func (r *CloudStorageJSONServerRun) Addr() net.Addr {
-	return r.addr
+	apiServer    *http.Server
+	apiAddr      net.Addr
+	objectServer *http.Server
+	objectAddr   net.Addr
+	log          *logrus.Logger
 }
 
 // Close shuts down the server
 func (r *CloudStorageJSONServerRun) Close() error {
-	return r.server.Close()
+	if err := r.apiServer.Close(); err != nil {
+		return err
+	}
+	return r.objectServer.Close()
 }
 
 // SetLogLevel sets the log level
@@ -47,8 +48,13 @@ func (r *CloudStorageJSONServerRun) SetLogLevel(level logrus.Level) {
 
 // NewCloudStorageJSONServer starts a server for cloud storage JSON api.
 func NewCloudStorageJSONServer(s CloudStorageJSONServer) (*CloudStorageJSONServerRun, error) {
-	l, err := net.Listen("tcp", "127.0.0.1:0")
+	apiListener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
+		return nil, err
+	}
+	objectListener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		apiListener.Close()
 		return nil, err
 	}
 
@@ -57,11 +63,11 @@ func NewCloudStorageJSONServer(s CloudStorageJSONServer) (*CloudStorageJSONServe
 
 	// Some handlers require stream handlings,
 	// so handle with raw net/http and partially pass to echo.
-	r := mux.NewRouter()
+	apiRouter := mux.NewRouter()
 
 	// Handle  with raw handler,
 	// as it requires stream handling
-	r.HandleFunc("/upload/storage/v1/b/{bucket}/o", func(w http.ResponseWriter, r *http.Request) {
+	apiRouter.HandleFunc("/upload/storage/v1/b/{bucket}/o", func(w http.ResponseWriter, r *http.Request) {
 		vars := mux.Vars(r)
 
 		if "multipart" != r.URL.Query().Get("uploadType") {
@@ -143,21 +149,38 @@ func NewCloudStorageJSONServer(s CloudStorageJSONServer) (*CloudStorageJSONServe
 	e.HideBanner = true
 	e.HidePort = true
 
-	r.PathPrefix("/").Handler(e.Server.Handler)
+	apiRouter.PathPrefix("/").Handler(e.Server.Handler)
 
-	logMux := http.NewServeMux()
-	logMux.HandleFunc("/", func(rsp http.ResponseWriter, req *http.Request) {
-		log.Debugf("%+v %+v", req.Method, req.URL)
-		rspWrapper := NewResponseSniffer(rsp)
-		r.ServeHTTP(rspWrapper, req)
-		log.Infof("%+v %+v %+v size=%v", rspWrapper.Code(), req.Method, req.URL, rspWrapper.BodySize())
+	objectRouter := mux.NewRouter()
+	objectRouter.HandleFunc("/{bucket}/{object:.*}", func(w http.ResponseWriter, r *http.Request) {
+		vars := mux.Vars(r)
+		if err := s.GetObject(vars["bucket"], vars["object"], w, r); err != nil {
+			if httpError, ok := err.(*echo.HTTPError); ok {
+				w.WriteHeader(httpError.Code)
+				w.Write([]byte(fmt.Sprintf("%+v", httpError.Message)))
+				return
+			}
+			w.WriteHeader(http.StatusInternalServerError)
+			log.WithError(err).Error("Error in the handler")
+			return
+		}
 	})
-	server := &http.Server{
-		Handler: logMux,
+
+	apiServer := &http.Server{
+		Handler: NewLogMux(apiRouter, log),
 	}
-	go server.Serve(l)
+	go apiServer.Serve(apiListener)
+
+	objectServer := &http.Server{
+		Handler: NewLogMux(objectRouter, log),
+	}
+	go objectServer.Serve(objectListener)
+
 	return &CloudStorageJSONServerRun{
-		server: server,
-		addr:   l.Addr(),
+		apiServer:    apiServer,
+		apiAddr:      apiListener.Addr(),
+		objectServer: objectServer,
+		objectAddr:   objectListener.Addr(),
+		log:          log,
 	}, nil
 }

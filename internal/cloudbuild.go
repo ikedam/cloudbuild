@@ -370,6 +370,7 @@ func (s *CloudBuildSubmit) watchCloudBuild(buildID string) (string, error) {
 		offset:       0,
 		started:      false,
 		complete:     false,
+		out:          os.Stdout,
 	}
 
 	if w.build.Status == "QUEUED" {
@@ -406,6 +407,7 @@ type watchLogStatus struct {
 	gcsAttempt   int
 	started      bool
 	complete     bool
+	out          io.Writer
 }
 
 func (w *watchLogStatus) watchLog() error {
@@ -462,7 +464,7 @@ func (w *watchLogStatus) watchLog() error {
 			return int64(0), err
 		}
 		defer reader.Close()
-		return io.Copy(os.Stdout, reader)
+		return io.Copy(w.out, reader)
 	}(); err != nil {
 		if !isIgnorableGcsError(err) {
 			if (w.config.MaxReadLogTryCount > 0 && w.gcsAttempt >= w.config.MaxReadLogTryCount) ||
