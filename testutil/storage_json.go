@@ -26,48 +26,66 @@ type CloudStorageJSONServer interface {
 
 // CloudStorageJSONServerRun holds information for running CloudStorageJSONServer
 type CloudStorageJSONServerRun struct {
-	apiServer    *http.Server
-	apiAddr      net.Addr
-	objectServer *http.Server
-	objectAddr   net.Addr
-	log          *logrus.Logger
+	serverInterface CloudStorageJSONServer
+	server          *http.Server
+	addr            net.Addr
+	log             *logrus.Logger
+	router          *mux.Router
 }
 
 // Close shuts down the server
-func (r *CloudStorageJSONServerRun) Close() error {
-	if err := r.apiServer.Close(); err != nil {
-		return err
-	}
-	return r.objectServer.Close()
+func (run *CloudStorageJSONServerRun) Close() error {
+	return run.server.Close()
 }
 
 // SetLogLevel sets the log level
-func (r *CloudStorageJSONServerRun) SetLogLevel(level logrus.Level) {
-	r.log.SetLevel(level)
+func (run *CloudStorageJSONServerRun) SetLogLevel(level logrus.Level) {
+	run.log.SetLevel(level)
+}
+
+// PrepareBucket prepares bucket
+// This is required as generic bucket routing easily masks api interfaces.
+func (run *CloudStorageJSONServerRun) PrepareBucket(bucket string) {
+	run.router.HandleFunc(fmt.Sprintf("/%s/{object:.*}", bucket), func(w http.ResponseWriter, r *http.Request) {
+		vars := mux.Vars(r)
+		if err := run.serverInterface.GetObject(bucket, vars["object"], w, r); err != nil {
+			if httpError, ok := err.(*echo.HTTPError); ok {
+				w.WriteHeader(httpError.Code)
+				w.Write([]byte(fmt.Sprintf("%+v", httpError.Message)))
+				return
+			}
+			w.WriteHeader(http.StatusInternalServerError)
+			run.log.WithError(err).Error("Error in the handler")
+			return
+		}
+	})
 }
 
 // NewCloudStorageJSONServer starts a server for cloud storage JSON api.
 func NewCloudStorageJSONServer(s CloudStorageJSONServer) (*CloudStorageJSONServerRun, error) {
-	apiListener, err := net.Listen("tcp", "127.0.0.1:0")
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
-		return nil, err
-	}
-	objectListener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		apiListener.Close()
 		return nil, err
 	}
 
 	log := logrus.New()
 	log.Level = DefaultLogLevel
 
-	// Some handlers require stream handlings,
-	// so handle with raw net/http and partially pass to echo.
-	apiRouter := mux.NewRouter()
+	// cloud.google.com/go/storage library behaves really strange way:
+	// * cloud storage consists of an api server and a storage server.
+	// * The library accepts an alternate api server address as a client option.
+	// * The library accepts analternate storage server address with
+	//     the environment variable "STORAGE_EMULATOR_HOST"
+	// * Strange behavior: the library uses "STORAGE_EMULATOR_HOST" as
+	//     the address for the api server for some operations like uploads.
+	//
+	// This behavior prevents us to provide seperate api server and storage server
+	// for mocking.
+	router := mux.NewRouter()
 
 	// Handle  with raw handler,
 	// as it requires stream handling
-	apiRouter.HandleFunc("/upload/storage/v1/b/{bucket}/o", func(w http.ResponseWriter, r *http.Request) {
+	router.HandleFunc("/upload/storage/v1/b/{bucket}/o", func(w http.ResponseWriter, r *http.Request) {
 		vars := mux.Vars(r)
 
 		if "multipart" != r.URL.Query().Get("uploadType") {
@@ -145,42 +163,30 @@ func NewCloudStorageJSONServer(s CloudStorageJSONServer) (*CloudStorageJSONServe
 		return
 	})
 
+	// Many APIs work as REST, and then pass to echo.
 	e := echo.New()
 	e.HideBanner = true
 	e.HidePort = true
 
-	apiRouter.PathPrefix("/").Handler(e.Server.Handler)
-
-	objectRouter := mux.NewRouter()
-	objectRouter.HandleFunc("/{bucket}/{object:.*}", func(w http.ResponseWriter, r *http.Request) {
-		vars := mux.Vars(r)
-		if err := s.GetObject(vars["bucket"], vars["object"], w, r); err != nil {
-			if httpError, ok := err.(*echo.HTTPError); ok {
-				w.WriteHeader(httpError.Code)
-				w.Write([]byte(fmt.Sprintf("%+v", httpError.Message)))
-				return
-			}
-			w.WriteHeader(http.StatusInternalServerError)
-			log.WithError(err).Error("Error in the handler")
+	handler := http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		var match mux.RouteMatch
+		if router.Match(req, &match) {
+			router.ServeHTTP(w, req)
 			return
 		}
+		e.ServeHTTP(w, req)
 	})
 
-	apiServer := &http.Server{
-		Handler: NewLogMux(apiRouter, log),
+	server := &http.Server{
+		Handler: NewLogMux(handler, log),
 	}
-	go apiServer.Serve(apiListener)
-
-	objectServer := &http.Server{
-		Handler: NewLogMux(objectRouter, log),
-	}
-	go objectServer.Serve(objectListener)
+	go server.Serve(listener)
 
 	return &CloudStorageJSONServerRun{
-		apiServer:    apiServer,
-		apiAddr:      apiListener.Addr(),
-		objectServer: objectServer,
-		objectAddr:   objectListener.Addr(),
-		log:          log,
+		serverInterface: s,
+		server:          server,
+		addr:            listener.Addr(),
+		router:          router,
+		log:             log,
 	}, nil
 }

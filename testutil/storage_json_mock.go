@@ -15,18 +15,18 @@ import (
 type MockCloudStorageJSONServerSetup struct {
 	Mock   *MockCloudStorageJSONServer
 	Ctrl   *gomock.Controller
-	server *CloudStorageJSONServerRun
+	Server *CloudStorageJSONServerRun
 }
 
 // Close stops the mocked server
 func (m *MockCloudStorageJSONServerSetup) Close() {
-	m.server.Close()
+	m.Server.Close()
 	m.Ctrl.Finish()
 }
 
 // SetLogLevel sets log level for the server
 func (m *MockCloudStorageJSONServerSetup) SetLogLevel(level logrus.Level) {
-	m.server.SetLogLevel(level)
+	m.Server.SetLogLevel(level)
 }
 
 // NewClient creates a new cloud storage client connecting to this mock.
@@ -36,11 +36,11 @@ func (m *MockCloudStorageJSONServerSetup) NewClient(t *testing.T) (*storage.Clie
 	MockEnvironment(
 		t,
 		"STORAGE_EMULATOR_HOST",
-		m.server.objectAddr.String(),
+		m.Server.addr.String(),
 		func() {
 			gcsClient, err = storage.NewClient(
 				context.Background(),
-				option.WithEndpoint(fmt.Sprintf("http://%v/", m.server.apiAddr.String())),
+				option.WithEndpoint(fmt.Sprintf("http://%v/", m.Server.addr.String())),
 				option.WithoutAuthentication(),
 			)
 		},
@@ -69,6 +69,6 @@ func SetupMockCloudStorageJSONServer(t *testing.T) *MockCloudStorageJSONServerSe
 	return &MockCloudStorageJSONServerSetup{
 		Mock:   mock,
 		Ctrl:   ctrl,
-		server: s,
+		Server: s,
 	}
 }

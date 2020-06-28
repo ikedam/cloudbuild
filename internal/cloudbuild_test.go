@@ -159,6 +159,7 @@ func TestUploadCloudStorage(t *testing.T) {
 		t.Skip()
 	}
 	defer mockServer.Close()
+	mockServer.Server.PrepareBucket("test")
 
 	gcsClient, err := mockServer.NewClient(t)
 	require.NoError(t, err)
@@ -217,6 +218,7 @@ func TestWatchLog(t *testing.T) {
 		t.Skip()
 	}
 	defer mockGcsServer.Close()
+	mockGcsServer.Server.PrepareBucket("logbucket")
 	// mockGcsServer.SetLogLevel(logrus.DebugLevel)
 
 	gcsClient, err := mockGcsServer.NewClient(t)
