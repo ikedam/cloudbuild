@@ -1,15 +1,17 @@
-FROM golang:1.13.5-alpine3.11 as build
+FROM golang:1.15.6-alpine3.12 as dev
 
 RUN apk add --no-cache gcc libc-dev
+WORKDIR /workspace
+
+FROM dev as build
 
 ARG VERSION
 ARG COMMIT
 
-WORKDIR /workspace
 ADD . /workspace/
 RUN go build -ldflags "-X main.version=${VERSION:-dev} -X main.commit=${COMMIT:-none}" ./cmd/cloudbuild
 
-FROM alpine:3.11.2
+FROM alpine:3.12.3
 
 WORKDIR /workspace
 COPY LICENSE /

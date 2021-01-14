@@ -3,7 +3,7 @@ jobs:
   build-docker:
     working_directory: /go/src/github.com/ikedam/cloudbuild
     docker:
-      - image: circleci/golang:1.13
+      - image: circleci/golang:1.15
     steps:
       - checkout
       - setup_remote_docker
@@ -19,7 +19,7 @@ jobs:
             - cloudbuild-docker-image.tar
   deploy-to-dockerhub:
     docker:
-      - image: circleci/golang:1.13
+      - image: circleci/golang:1.15
     steps:
       - setup_remote_docker
       - attach_workspace:
